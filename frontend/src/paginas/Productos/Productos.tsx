@@ -1,181 +1,267 @@
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  Boxes,
+  Info,
+  PackageSearch,
+  Tags,
+} from "lucide-react";
 
+import { useState } from "react";
 
-function Productos(){
+import {
+  useAuth,
+} from "../../contextos/AuthContext";
 
-    const productos = [
-        {
-            id:1,
-            nombre:"Hamburguesa Clásica",
-            precio:25,
-            estado:"Activo"
-        },
-        {
-            id:2,
-            nombre:"Salchipapa Especial",
-            precio:20,
-            estado:"Activo"
-        },
-        {
-            id:3,
-            nombre:"Refresco",
-            precio:8,
-            estado:"Activo"
-        }
-    ];
+import GestionCategorias from "./GestionCategorias";
+import GestionProductos from "./GestionProductos";
 
+type PestañaCatalogo =
+  | "productos"
+  | "categorias";
 
-    return(
+function Productos() {
+  const { usuario } = useAuth();
 
-        <div>
+  const [pestañaActiva, setPestañaActiva] =
+    useState<PestañaCatalogo>(
+      "productos",
+    );
 
+  const puedeGestionar =
+    usuario?.permisos.includes(
+      "PRODUCTOS_GESTIONAR",
+    ) ?? false;
 
-            <div className="flex justify-between items-center mb-6">
+  return (
+    <div className="space-y-6">
+      <header
+        className="
+          relative overflow-hidden
+          rounded-3xl
+          bg-linear-to-br
+          from-slate-950
+          via-slate-900
+          to-red-950
+          p-6 text-white
+          shadow-flotante
+          sm:p-8
+        "
+      >
+        <div
+          className="
+            absolute -right-16
+            -top-16 h-48 w-48
+            rounded-full
+            bg-red-600/20 blur-3xl
+          "
+        />
 
-                <h1 className="text-3xl font-bold">
-                    Productos
-                </h1>
-
-
-                <button
-                className="
-                bg-red-700
-                text-white
-                px-4
-                py-2
-                rounded-lg
-                flex
-                items-center
-                gap-2
-                hover:bg-red-800"
-                >
-
-                    <Plus size={20}/>
-                    Nuevo producto
-
-                </button>
-
-
+        <div
+          className="
+            relative flex flex-col
+            gap-5 lg:flex-row
+            lg:items-center
+            lg:justify-between
+          "
+        >
+          <div>
+            <div
+              className="
+                inline-flex items-center
+                gap-2 rounded-full
+                border border-white/15
+                bg-white/10
+                px-3 py-1.5
+                text-xs font-bold
+                text-red-100
+                backdrop-blur
+              "
+            >
+              <Boxes size={15} />
+              Gestión del menú
             </div>
 
+            <h1
+              className="
+                mt-4 text-3xl
+                font-black tracking-tight
+                sm:text-4xl
+              "
+            >
+              Productos y categorías
+            </h1>
 
+            <p
+              className="
+                mt-3 max-w-2xl
+                text-sm leading-relaxed
+                text-slate-300
+                sm:text-base
+              "
+            >
+              Administra la información
+              comercial de los productos
+              ofrecidos por Roma Fast
+              Food y organiza el menú
+              mediante categorías.
+            </p>
+          </div>
 
-            <div className="bg-white rounded-xl shadow overflow-hidden">
-
-
-                <table className="w-full">
-
-
-                    <thead className="bg-gray-100">
-
-                        <tr>
-
-                            <th className="p-4 text-left">
-                                Nombre
-                            </th>
-
-                            <th className="p-4 text-left">
-                                Precio
-                            </th>
-
-                            <th className="p-4 text-left">
-                                Estado
-                            </th>
-
-                            <th className="p-4 text-left">
-                                Acciones
-                            </th>
-
-                        </tr>
-
-                    </thead>
-
-
-
-                    <tbody>
-
-
-                        {
-                            productos.map(producto=>(
-
-                                <tr 
-                                key={producto.id}
-                                className="border-t"
-                                >
-
-                                    <td className="p-4">
-                                        {producto.nombre}
-                                    </td>
-
-
-                                    <td className="p-4">
-                                        Bs. {producto.precio}
-                                    </td>
-
-
-                                    <td className="p-4">
-
-                                        <span
-                                        className="
-                                        bg-green-100
-                                        text-green-700
-                                        px-3
-                                        py-1
-                                        rounded-full
-                                        text-sm"
-                                        >
-
-                                            {producto.estado}
-
-                                        </span>
-
-                                    </td>
-
-
-                                    <td className="p-4 flex gap-3">
-
-
-                                        <button
-                                        className="text-blue-600"
-                                        >
-
-                                            <Pencil size={20}/>
-
-                                        </button>
-
-
-                                        <button
-                                        className="text-red-600"
-                                        >
-
-                                            <Trash2 size={20}/>
-
-                                        </button>
-
-
-                                    </td>
-
-
-                                </tr>
-
-                            ))
-                        }
-
-
-                    </tbody>
-
-
-                </table>
-
-
-            </div>
-
-
+          <div
+            className="
+              flex h-20 w-20
+              items-center
+              justify-center
+              rounded-3xl
+              border border-white/15
+              bg-white/10
+              backdrop-blur
+            "
+          >
+            <PackageSearch
+              size={38}
+              className="text-red-200"
+            />
+          </div>
         </div>
+      </header>
 
-    )
+      {!puedeGestionar && (
+        <div
+          className="
+            flex items-start gap-3
+            rounded-2xl
+            border border-blue-200
+            bg-blue-50 p-4
+          "
+        >
+          <Info
+            size={21}
+            className="
+              mt-0.5 shrink-0
+              text-blue-700
+            "
+          />
 
+          <div>
+            <p
+              className="
+                text-sm font-bold
+                text-blue-900
+              "
+            >
+              Modo de consulta
+            </p>
+
+            <p
+              className="
+                mt-1 text-xs
+                leading-relaxed
+                text-blue-700
+              "
+            >
+              Tu rol puede consultar el
+              catálogo, pero no registrar,
+              editar, activar o desactivar
+              productos y categorías.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="
+          inline-flex w-full
+          rounded-2xl
+          border border-slate-200
+          bg-white p-1.5
+          shadow-sm sm:w-auto
+        "
+      >
+        <button
+          type="button"
+          onClick={() =>
+            setPestañaActiva(
+              "productos",
+            )
+          }
+          className={`
+            inline-flex flex-1
+            items-center justify-center
+            gap-2 rounded-xl
+            px-5 py-3
+            text-sm font-bold
+            transition-colors
+            sm:flex-none
+            ${
+              pestañaActiva ===
+              "productos"
+                ? `
+                  bg-slate-900
+                  text-white
+                  shadow-sm
+                `
+                : `
+                  text-slate-600
+                  hover:bg-slate-100
+                `
+            }
+          `}
+        >
+          <Boxes size={18} />
+          Productos
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setPestañaActiva(
+              "categorias",
+            )
+          }
+          className={`
+            inline-flex flex-1
+            items-center justify-center
+            gap-2 rounded-xl
+            px-5 py-3
+            text-sm font-bold
+            transition-colors
+            sm:flex-none
+            ${
+              pestañaActiva ===
+              "categorias"
+                ? `
+                  bg-red-700
+                  text-white
+                  shadow-sm
+                `
+                : `
+                  text-slate-600
+                  hover:bg-slate-100
+                `
+            }
+          `}
+        >
+          <Tags size={18} />
+          Categorías
+        </button>
+      </div>
+
+      {pestañaActiva ===
+      "productos" ? (
+        <GestionProductos
+          puedeGestionar={
+            puedeGestionar
+          }
+        />
+      ) : (
+        <GestionCategorias
+          puedeGestionar={
+            puedeGestionar
+          }
+        />
+      )}
+    </div>
+  );
 }
-
 
 export default Productos;
