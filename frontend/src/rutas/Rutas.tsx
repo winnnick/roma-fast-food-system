@@ -39,6 +39,20 @@ const Ventas = lazy(
   () => import("../paginas/Ventas/Ventas"),
 );
 
+const PantallaPedidos = lazy(
+  () =>
+    import(
+      "../paginas/Ventas/PantallaPedidos"
+    ),
+);
+
+const Clientes = lazy(
+  () =>
+    import(
+      "../paginas/Clientes/Clientes"
+    ),
+);
+
 const Productos = lazy(
   () =>
     import(
@@ -107,6 +121,17 @@ function Rutas() {
             }
           />
 
+          <Route
+            path="/pantalla-pedidos"
+            element={
+              <RutaProtegida>
+                <RutaConPermiso permiso="VENTAS_VER">
+                  <PantallaPedidos />
+                </RutaConPermiso>
+              </RutaProtegida>
+            }
+          />
+
           {/* Rutas internas protegidas */}
           <Route
             path="/"
@@ -153,6 +178,16 @@ function Rutas() {
               }
             />
 
+            {/* Clientes */}
+            <Route
+              path="clientes"
+              element={
+                <RutaConPermiso permiso="VENTAS_VER">
+                  <Clientes />
+                </RutaConPermiso>
+              }
+            />
+
             {/* Productos */}
             <Route
               path="productos"
@@ -193,6 +228,7 @@ function Rutas() {
               }
             />
 
+            {/* Roles y permisos */}
             <Route
               path="roles-permisos"
               element={

@@ -1136,7 +1136,7 @@ function GestionProductos({
             <div className="overflow-x-auto">
               <table
                 className="
-                  w-full min-w-[1100px]
+                  w-full min-w-275
                 "
               >
                 <thead>

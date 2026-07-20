@@ -4,6 +4,7 @@ import {
   Package,
   ShieldCheck,
   ShoppingCart,
+  UserRound,
   Users,
   Utensils,
   Wallet,
@@ -58,6 +59,15 @@ export const seccionesMenu: SeccionMenu[] = [
         descripcion:
           "Registro y seguimiento de ventas",
         icono: ShoppingCart,
+        permiso: "VENTAS_VER",
+      },
+
+      {
+        nombre: "Clientes",
+        ruta: "/clientes",
+        descripcion:
+          "Registro y consulta de clientes",
+        icono: UserRound,
         permiso: "VENTAS_VER",
       },
 
