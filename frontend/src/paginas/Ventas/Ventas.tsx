@@ -17,7 +17,9 @@ import {
   useState,
 } from "react";
 
-import { useAuth } from "../../contextos/AuthContext";
+import {
+  useAuth,
+} from "../../contextos/AuthContext";
 
 import {
   listarCategorias,
@@ -38,6 +40,11 @@ import {
   listarVentas,
 } from "../../servicios/ventaServicio";
 
+import {
+  obtenerCajaAbierta,
+  registrarPagoVenta,
+} from "../../servicios/cajaServicio";
+
 import type {
   CategoriaProducto,
   ProductoMenu,
@@ -53,6 +60,11 @@ import type {
   Venta,
 } from "../../tipos/venta";
 
+import type {
+  RegistrarPagoVentaDto,
+  SesionCaja,
+} from "../../tipos/caja";
+
 import NotificacionFlotante, {
   type DatosNotificacion,
 } from "../../shared/feedback/NotificacionFlotante";
@@ -62,6 +74,7 @@ import ModalConfirmacion from "../../shared/ui/ModalConfirmacion";
 import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
 import FormularioVenta from "./FormularioVenta";
+import FormularioCobro from "./FormularioCobro";
 import HistorialVentas from "./HistorialVentas";
 import PanelPreparacion from "./PanelPreparacion";
 
@@ -108,6 +121,11 @@ function Ventas() {
       "VENTAS_CREAR",
     ) ?? false;
 
+  const puedeCobrar =
+    usuario?.permisos.includes(
+      "CAJA_GESTIONAR",
+    ) ?? false;
+
   const [
     pestanaActiva,
     setPestanaActiva,
@@ -123,10 +141,9 @@ function Ventas() {
   const [
     categorias,
     setCategorias,
-  ] =
-    useState<CategoriaProducto[]>(
-      [],
-    );
+  ] = useState<
+    CategoriaProducto[]
+  >([]);
 
   const [clientes, setClientes] =
     useState<Cliente[]>([]);
@@ -139,12 +156,21 @@ function Ventas() {
     setCargandoInicial,
   ] = useState(true);
 
-  const [errorCarga, setErrorCarga] =
-    useState<string | null>(null);
+  const [
+    errorCarga,
+    setErrorCarga,
+  ] = useState<string | null>(
+    null,
+  );
 
   const [
     procesandoOperacion,
     setProcesandoOperacion,
+  ] = useState(false);
+
+  const [
+    procesandoCobro,
+    setProcesandoCobro,
   ] = useState(false);
 
   const [
@@ -176,6 +202,19 @@ function Ventas() {
     motivoAnulacion,
     setMotivoAnulacion,
   ] = useState("");
+
+  const [
+    ventaParaCobrar,
+    setVentaParaCobrar,
+  ] = useState<Venta | null>(null);
+
+  const [
+    cajaAbierta,
+    setCajaAbierta,
+  ] =
+    useState<SesionCaja | null>(
+      null,
+    );
 
   const cerrarNotificacion =
     useCallback(() => {
@@ -332,16 +371,6 @@ function Ventas() {
       const venta =
         await crearVenta(datos);
 
-      setNotificacion({
-        tipo: "exito",
-
-        titulo:
-          "Pedido registrado",
-
-        mensaje:
-          `${venta.numeroPedido} fue enviado a preparación.`,
-      });
-
       setClaveFormulario(
         (clave) => clave + 1,
       );
@@ -351,6 +380,49 @@ function Ventas() {
       setPestanaActiva(
         "preparacion",
       );
+
+      let caja:
+        SesionCaja | null = null;
+
+      if (puedeCobrar) {
+        try {
+          caja =
+            await obtenerCajaAbierta();
+        } catch {
+          caja = null;
+        }
+      }
+
+      setCajaAbierta(caja);
+
+      if (
+        puedeCobrar &&
+        caja
+      ) {
+        setVentaParaCobrar(
+          venta,
+        );
+
+        setNotificacion({
+          tipo: "exito",
+
+          titulo:
+            "Pedido registrado",
+
+          mensaje:
+            `${venta.numeroPedido} fue enviado a preparación. Puedes registrar el cobro ahora.`,
+        });
+      } else {
+        setNotificacion({
+          tipo: "info",
+
+          titulo:
+            "Pedido registrado",
+
+          mensaje:
+            `${venta.numeroPedido} fue enviado a preparación y quedó pendiente de cobro.`,
+        });
+      }
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
@@ -423,6 +495,110 @@ function Ventas() {
       });
     } finally {
       setProcesandoOperacion(false);
+    }
+  }
+
+  async function solicitarCobro(
+    venta: Venta,
+  ) {
+    if (!puedeCobrar) {
+      return;
+    }
+
+    try {
+      setProcesandoCobro(true);
+
+      const caja =
+        await obtenerCajaAbierta();
+
+      if (!caja) {
+        setNotificacion({
+          tipo: "error",
+
+          titulo:
+            "Caja cerrada",
+
+          mensaje:
+            "Abre una caja antes de registrar el cobro.",
+        });
+
+        return;
+      }
+
+      setCajaAbierta(caja);
+      setVentaParaCobrar(venta);
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+
+        titulo:
+          "No se pudo iniciar el cobro",
+
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    } finally {
+      setProcesandoCobro(false);
+    }
+  }
+
+  function cerrarCobro() {
+    if (procesandoCobro) {
+      return;
+    }
+
+    setVentaParaCobrar(null);
+    setCajaAbierta(null);
+  }
+
+  async function confirmarCobro(
+    datos: RegistrarPagoVentaDto,
+  ) {
+    if (
+      !ventaParaCobrar ||
+      !usuario ||
+      !puedeCobrar
+    ) {
+      return;
+    }
+
+    try {
+      setProcesandoCobro(true);
+
+      const pago =
+        await registrarPagoVenta(
+          datos,
+          usuario,
+        );
+
+      setNotificacion({
+        tipo: "exito",
+
+        titulo:
+          "Cobro registrado",
+
+        mensaje:
+          pago.cambio > 0
+            ? `${pago.numeroPedido} fue cobrado. Cambio: ${formatearMoneda(pago.cambio)}.`
+            : `${pago.numeroPedido} fue cobrado correctamente.`,
+      });
+
+      setVentaParaCobrar(null);
+      setCajaAbierta(null);
+
+      await recargarVentas();
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+
+        titulo:
+          "No se pudo registrar el cobro",
+
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    } finally {
+      setProcesandoCobro(false);
     }
   }
 
@@ -682,9 +858,10 @@ function Ventas() {
               "
             >
               Registra la venta, genera
-              el número de pedido y
-              controla su preparación
-              desde una sola operación.
+              el número de pedido,
+              controla la preparación y
+              realiza el cobro desde una
+              sola operación.
             </p>
           </div>
 
@@ -744,7 +921,7 @@ function Ventas() {
           valor={String(
             ventasPendientes.length,
           )}
-          descripcion="Se cobrarán desde Caja"
+          descripcion="Cobros todavía no registrados"
           icono={CircleDollarSign}
           tono="azul"
         />
@@ -822,15 +999,8 @@ function Ventas() {
                 ${
                   pestanaActiva ===
                   "nueva"
-                    ? `
-                      bg-red-700
-                      text-white
-                    `
-                    : `
-                      bg-white
-                      text-slate-600
-                      hover:bg-slate-100
-                    `
+                    ? "bg-red-700 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-100"
                 }
               `}
             >
@@ -854,15 +1024,8 @@ function Ventas() {
               ${
                 pestanaActiva ===
                 "preparacion"
-                  ? `
-                    bg-red-700
-                    text-white
-                  `
-                  : `
-                    bg-white
-                    text-slate-600
-                    hover:bg-slate-100
-                  `
+                  ? "bg-red-700 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-100"
               }
             `}
           >
@@ -885,15 +1048,8 @@ function Ventas() {
               ${
                 pestanaActiva ===
                 "historial"
-                  ? `
-                    bg-red-700
-                    text-white
-                  `
-                  : `
-                    bg-white
-                    text-slate-600
-                    hover:bg-slate-100
-                  `
+                  ? "bg-red-700 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-100"
               }
             `}
           >
@@ -929,11 +1085,19 @@ function Ventas() {
             puedeGestionar={
               puedeGestionar
             }
+            puedeCobrar={
+              puedeCobrar
+            }
             alCambiarEstado={
               solicitarCambioEstado
             }
             alAnular={
               abrirAnulacion
+            }
+            alCobrar={(venta) =>
+              void solicitarCobro(
+                venta,
+              )
             }
           />
         )}
@@ -945,12 +1109,52 @@ function Ventas() {
             puedeGestionar={
               puedeGestionar
             }
+            puedeCobrar={
+              puedeCobrar
+            }
             alAnular={
               abrirAnulacion
+            }
+            alCobrar={(venta) =>
+              void solicitarCobro(
+                venta,
+              )
             }
           />
         )}
       </section>
+
+      <Modal
+        abierto={Boolean(
+          ventaParaCobrar &&
+            cajaAbierta,
+        )}
+        titulo={
+          ventaParaCobrar
+            ? `Cobrar ${ventaParaCobrar.numeroPedido}`
+            : "Registrar cobro"
+        }
+        descripcion="Selecciona el descuento, método de pago y monto entregado por el cliente."
+        ancho="grande"
+        alCerrar={cerrarCobro}
+      >
+        {ventaParaCobrar &&
+          cajaAbierta && (
+            <FormularioCobro
+              venta={ventaParaCobrar}
+              sesionCaja={cajaAbierta}
+              cargando={
+                procesandoCobro
+              }
+              alCobrar={
+                confirmarCobro
+              }
+              alCancelar={
+                cerrarCobro
+              }
+            />
+          )}
+      </Modal>
 
       <ModalConfirmacion
         abierto={Boolean(

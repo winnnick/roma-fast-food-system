@@ -4,6 +4,7 @@ import {
   ChefHat,
   Clock3,
   PackageCheck,
+  WalletCards,
 } from "lucide-react";
 
 import type {
@@ -14,6 +15,7 @@ import type {
 interface PanelPreparacionProps {
   ventas: Venta[];
   puedeGestionar: boolean;
+  puedeCobrar: boolean;
 
   alCambiarEstado: (
     venta: Venta,
@@ -21,6 +23,29 @@ interface PanelPreparacionProps {
   ) => void;
 
   alAnular: (
+    venta: Venta,
+  ) => void;
+
+  alCobrar: (
+    venta: Venta,
+  ) => void;
+}
+
+interface TarjetaPedidoProps {
+  venta: Venta;
+  puedeGestionar: boolean;
+  puedeCobrar: boolean;
+
+  alCambiarEstado: (
+    venta: Venta,
+    estado: EstadoPreparacion,
+  ) => void;
+
+  alAnular: (
+    venta: Venta,
+  ) => void;
+
+  alCobrar: (
     venta: Venta,
   ) => void;
 }
@@ -78,24 +103,20 @@ function obtenerResumenProductos(
 function TarjetaPedido({
   venta,
   puedeGestionar,
+  puedeCobrar,
   alCambiarEstado,
   alAnular,
-}: {
-  venta: Venta;
-  puedeGestionar: boolean;
-
-  alCambiarEstado: (
-    venta: Venta,
-    estado: EstadoPreparacion,
-  ) => void;
-
-  alAnular: (
-    venta: Venta,
-  ) => void;
-}) {
+  alCobrar,
+}: TarjetaPedidoProps) {
   const estaListo =
     venta.estadoPreparacion ===
     "Listo";
+
+  const puedeMostrarAcciones =
+    puedeGestionar ||
+    (puedeCobrar &&
+      venta.estadoCobro ===
+        "Pendiente de cobro");
 
   return (
     <article
@@ -153,14 +174,8 @@ function TarjetaPedido({
             rounded-2xl
             ${
               estaListo
-                ? `
-                  bg-emerald-600
-                  text-white
-                `
-                : `
-                  bg-amber-500
-                  text-white
-                `
+                ? "bg-emerald-600 text-white"
+                : "bg-amber-500 text-white"
             }
           `}
         >
@@ -186,18 +201,28 @@ function TarjetaPedido({
               text-xs font-bold
               ${
                 estaListo
-                  ? `
-                    bg-emerald-50
-                    text-emerald-700
-                  `
-                  : `
-                    bg-amber-50
-                    text-amber-700
-                  `
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
               }
             `}
           >
             {venta.estadoPreparacion}
+          </span>
+
+          <span
+            className={`
+              inline-flex rounded-full
+              px-3 py-1
+              text-xs font-bold
+              ${
+                venta.estadoCobro ===
+                "Cobrada"
+                  ? "bg-blue-50 text-blue-700"
+                  : "bg-red-50 text-red-700"
+              }
+            `}
+          >
+            {venta.estadoCobro}
           </span>
 
           <span
@@ -284,88 +309,122 @@ function TarjetaPedido({
           </strong>
         </div>
 
-        {puedeGestionar ? (
+        {puedeMostrarAcciones ? (
           <div
             className="
               mt-5 grid gap-2
               sm:grid-cols-2
             "
           >
-            {venta.estadoPreparacion ===
-              "En preparación" && (
+            {puedeGestionar &&
+              venta.estadoPreparacion ===
+                "En preparación" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    alCambiarEstado(
+                      venta,
+                      "Listo",
+                    )
+                  }
+                  className="
+                    inline-flex items-center
+                    justify-center gap-2
+                    rounded-xl
+                    bg-emerald-600
+                    px-4 py-3
+                    text-sm font-bold
+                    text-white
+                    hover:bg-emerald-700
+                  "
+                >
+                  <CheckCircle2
+                    size={17}
+                  />
+
+                  Marcar listo
+                </button>
+              )}
+
+            {puedeGestionar &&
+              venta.estadoPreparacion ===
+                "Listo" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    alCambiarEstado(
+                      venta,
+                      "Entregado",
+                    )
+                  }
+                  className="
+                    inline-flex items-center
+                    justify-center gap-2
+                    rounded-xl
+                    bg-blue-600
+                    px-4 py-3
+                    text-sm font-bold
+                    text-white
+                    hover:bg-blue-700
+                  "
+                >
+                  <PackageCheck
+                    size={17}
+                  />
+
+                  Marcar entregado
+                </button>
+              )}
+
+            {puedeCobrar &&
+              venta.estadoCobro ===
+                "Pendiente de cobro" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    alCobrar(venta)
+                  }
+                  className="
+                    inline-flex items-center
+                    justify-center gap-2
+                    rounded-xl
+                    bg-indigo-600
+                    px-4 py-3
+                    text-sm font-bold
+                    text-white
+                    hover:bg-indigo-700
+                  "
+                >
+                  <WalletCards
+                    size={17}
+                  />
+
+                  Cobrar
+                </button>
+              )}
+
+            {puedeGestionar && (
               <button
                 type="button"
                 onClick={() =>
-                  alCambiarEstado(
-                    venta,
-                    "Listo",
-                  )
+                  alAnular(venta)
                 }
                 className="
                   inline-flex items-center
                   justify-center gap-2
                   rounded-xl
-                  bg-emerald-600
+                  bg-red-50
                   px-4 py-3
                   text-sm font-bold
-                  text-white
-                  hover:bg-emerald-700
+                  text-red-700
+                  hover:bg-red-100
                 "
               >
-                <CheckCircle2
-                  size={17}
-                />
-                Marcar listo
+                <Ban size={17} />
+
+                Anular
               </button>
             )}
-
-            {venta.estadoPreparacion ===
-              "Listo" && (
-              <button
-                type="button"
-                onClick={() =>
-                  alCambiarEstado(
-                    venta,
-                    "Entregado",
-                  )
-                }
-                className="
-                  inline-flex items-center
-                  justify-center gap-2
-                  rounded-xl
-                  bg-blue-600
-                  px-4 py-3
-                  text-sm font-bold
-                  text-white
-                  hover:bg-blue-700
-                "
-              >
-                <PackageCheck
-                  size={17}
-                />
-                Marcar entregado
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() =>
-                alAnular(venta)
-              }
-              className="
-                inline-flex items-center
-                justify-center gap-2
-                rounded-xl
-                bg-red-50
-                px-4 py-3
-                text-sm font-bold
-                text-red-700
-                hover:bg-red-100
-              "
-            >
-              <Ban size={17} />
-              Anular
-            </button>
           </div>
         ) : (
           <p
@@ -386,8 +445,10 @@ function TarjetaPedido({
 function PanelPreparacion({
   ventas,
   puedeGestionar,
+  puedeCobrar,
   alCambiarEstado,
   alAnular,
+  alCobrar,
 }: PanelPreparacionProps) {
   const ventasEnPreparacion =
     ventas
@@ -519,11 +580,17 @@ function PanelPreparacion({
                     puedeGestionar={
                       puedeGestionar
                     }
+                    puedeCobrar={
+                      puedeCobrar
+                    }
                     alCambiarEstado={
                       alCambiarEstado
                     }
                     alAnular={
                       alAnular
+                    }
+                    alCobrar={
+                      alCobrar
                     }
                   />
                 ),
@@ -614,11 +681,17 @@ function PanelPreparacion({
                     puedeGestionar={
                       puedeGestionar
                     }
+                    puedeCobrar={
+                      puedeCobrar
+                    }
                     alCambiarEstado={
                       alCambiarEstado
                     }
                     alAnular={
                       alAnular
+                    }
+                    alCobrar={
+                      alCobrar
                     }
                   />
                 ),

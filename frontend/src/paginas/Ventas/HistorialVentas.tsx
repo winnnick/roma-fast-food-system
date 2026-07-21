@@ -1,6 +1,7 @@
 import {
   Ban,
   Search,
+  WalletCards,
 } from "lucide-react";
 
 import {
@@ -17,8 +18,13 @@ import type {
 interface HistorialVentasProps {
   ventas: Venta[];
   puedeGestionar: boolean;
+  puedeCobrar: boolean;
 
   alAnular: (
+    venta: Venta,
+  ) => void;
+
+  alCobrar: (
     venta: Venta,
   ) => void;
 }
@@ -55,11 +61,10 @@ function formatearFechaHora(
 function clasePreparacion(
   estado: EstadoPreparacion,
 ): string {
-  const clases:
-    Record<
-      EstadoPreparacion,
-      string
-    > = {
+  const clases: Record<
+    EstadoPreparacion,
+    string
+  > = {
     "En preparación":
       "bg-amber-50 text-amber-700",
 
@@ -79,11 +84,10 @@ function clasePreparacion(
 function claseCobro(
   estado: EstadoCobro,
 ): string {
-  const clases:
-    Record<
-      EstadoCobro,
-      string
-    > = {
+  const clases: Record<
+    EstadoCobro,
+    string
+  > = {
     "Pendiente de cobro":
       "bg-amber-50 text-amber-700",
 
@@ -123,7 +127,9 @@ function resumenProductos(
 function HistorialVentas({
   ventas,
   puedeGestionar,
+  puedeCobrar,
   alAnular,
+  alCobrar,
 }: HistorialVentasProps) {
   const [busqueda, setBusqueda] =
     useState("");
@@ -444,6 +450,13 @@ function HistorialVentas({
                     venta.estadoPreparacion !==
                       "Anulado";
 
+                  const puedeRealizarCobro =
+                    puedeCobrar &&
+                    venta.estadoCobro ===
+                      "Pendiente de cobro" &&
+                    venta.estadoPreparacion !==
+                      "Anulado";
+
                   return (
                     <tr
                       key={venta.id}
@@ -535,19 +548,37 @@ function HistorialVentas({
                       </td>
 
                       <td className="px-5 py-4">
-                        <span
-                          className={`
-                            inline-flex
-                            rounded-full
-                            px-3 py-1
-                            text-xs font-bold
-                            ${claseCobro(
-                              venta.estadoCobro,
-                            )}
-                          `}
-                        >
-                          {venta.estadoCobro}
-                        </span>
+                        <div>
+                          <span
+                            className={`
+                              inline-flex
+                              rounded-full
+                              px-3 py-1
+                              text-xs font-bold
+                              ${claseCobro(
+                                venta.estadoCobro,
+                              )}
+                            `}
+                          >
+                            {
+                              venta.estadoCobro
+                            }
+                          </span>
+
+                          {venta.metodoPago && (
+                            <p
+                              className="
+                                mt-1 text-xs
+                                font-semibold
+                                text-slate-500
+                              "
+                            >
+                              {
+                                venta.metodoPago
+                              }
+                            </p>
+                          )}
+                        </div>
                       </td>
 
                       <td
@@ -563,39 +594,76 @@ function HistorialVentas({
                       </td>
 
                       <td className="px-5 py-4">
-                        {puedeAnular ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              alAnular(
-                                venta,
-                              )
-                            }
-                            className="
-                              inline-flex
-                              items-center gap-2
-                              rounded-xl
-                              bg-red-50
-                              px-3 py-2
-                              text-xs font-bold
-                              text-red-700
-                              hover:bg-red-100
-                            "
-                          >
-                            <Ban size={15} />
-                            Anular
-                          </button>
-                        ) : (
-                          <span
-                            className="
-                              text-xs
-                              font-semibold
-                              text-slate-400
-                            "
-                          >
-                            Sin acciones
-                          </span>
-                        )}
+                        <div
+                          className="
+                            flex flex-wrap gap-2
+                          "
+                        >
+                          {puedeRealizarCobro && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                alCobrar(
+                                  venta,
+                                )
+                              }
+                              className="
+                                inline-flex
+                                items-center gap-2
+                                rounded-xl
+                                bg-blue-50
+                                px-3 py-2
+                                text-xs font-bold
+                                text-blue-700
+                                hover:bg-blue-100
+                              "
+                            >
+                              <WalletCards
+                                size={15}
+                              />
+
+                              Cobrar
+                            </button>
+                          )}
+
+                          {puedeAnular && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                alAnular(
+                                  venta,
+                                )
+                              }
+                              className="
+                                inline-flex
+                                items-center gap-2
+                                rounded-xl
+                                bg-red-50
+                                px-3 py-2
+                                text-xs font-bold
+                                text-red-700
+                                hover:bg-red-100
+                              "
+                            >
+                              <Ban size={15} />
+
+                              Anular
+                            </button>
+                          )}
+
+                          {!puedeRealizarCobro &&
+                            !puedeAnular && (
+                              <span
+                                className="
+                                  text-xs
+                                  font-semibold
+                                  text-slate-400
+                                "
+                              >
+                                Sin acciones
+                              </span>
+                            )}
+                        </div>
                       </td>
                     </tr>
                   );

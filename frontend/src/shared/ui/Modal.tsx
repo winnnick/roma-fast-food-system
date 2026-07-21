@@ -16,7 +16,7 @@ interface ModalProps {
 
 const anchos = {
   mediano: "max-w-xl",
-  grande: "max-w-2xl",
+  grande: "max-w-5xl",
 };
 
 function Modal({

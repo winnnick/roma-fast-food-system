@@ -10,6 +10,7 @@ import type {
   CrearVentaDto,
   DetalleVenta,
   EstadoPreparacion,
+  RegistrarCobroVentaDto,
   Venta,
 } from "../tipos/venta";
 
@@ -43,16 +44,75 @@ function clonarDetalle(
   };
 }
 
+function normalizarVenta(
+  venta: Venta,
+): Venta {
+  const subtotal =
+    Number.isFinite(
+      venta.subtotal,
+    )
+      ? venta.subtotal
+      : venta.total;
+
+  const montoDescuento =
+    Number.isFinite(
+      venta.montoDescuento,
+    )
+      ? venta.montoDescuento
+      : 0;
+
+  const total =
+    Number.isFinite(venta.total)
+      ? venta.total
+      : redondearMoneda(
+          subtotal -
+            montoDescuento,
+        );
+
+  return {
+    ...venta,
+
+    subtotal,
+
+    tipoDescuento:
+      venta.tipoDescuento ??
+      "Ninguno",
+
+    valorDescuento:
+      Number.isFinite(
+        venta.valorDescuento,
+      )
+        ? venta.valorDescuento
+        : 0,
+
+    montoDescuento,
+
+    total,
+
+    pagoId:
+      venta.pagoId ?? null,
+
+    metodoPago:
+      venta.metodoPago ?? null,
+
+    fechaHoraCobro:
+      venta.fechaHoraCobro ?? null,
+
+    detalles:
+      Array.isArray(
+        venta.detalles,
+      )
+        ? venta.detalles.map(
+            clonarDetalle,
+          )
+        : [],
+  };
+}
+
 function clonarVenta(
   venta: Venta,
 ): Venta {
-  return {
-    ...venta,
-    detalles:
-      venta.detalles.map(
-        clonarDetalle,
-      ),
-  };
+  return normalizarVenta(venta);
 }
 
 function guardarVentas(
@@ -60,7 +120,9 @@ function guardarVentas(
 ): void {
   localStorage.setItem(
     CLAVE_VENTAS,
-    JSON.stringify(ventas),
+    JSON.stringify(
+      ventas.map(normalizarVenta),
+    ),
   );
 }
 
@@ -88,7 +150,7 @@ function obtenerVentasPersistidas():
     }
 
     return ventas.map(
-      clonarVenta,
+      normalizarVenta,
     );
   } catch {
     guardarVentas([]);
@@ -309,7 +371,7 @@ async function validarVenta(
   clienteNombre: string;
   detalles: DetalleVenta[];
   observaciones: string | null;
-  total: number;
+  subtotal: number;
 }> {
   const [
     cliente,
@@ -329,7 +391,7 @@ async function validarVenta(
       "Las observaciones generales",
     );
 
-  const total =
+  const subtotal =
     redondearMoneda(
       detalles.reduce(
         (acumulado, detalle) =>
@@ -343,7 +405,7 @@ async function validarVenta(
     ...cliente,
     detalles,
     observaciones,
-    total,
+    subtotal,
   };
 }
 
@@ -362,6 +424,27 @@ export async function listarVentas():
         ).getTime(),
     )
     .map(clonarVenta);
+}
+
+export async function obtenerVentaPorId(
+  id: number,
+): Promise<Venta> {
+  await esperar(200);
+
+  const venta =
+    obtenerVentasPersistidas()
+      .find(
+        (ventaActual) =>
+          ventaActual.id === id,
+      );
+
+  if (!venta) {
+    throw new Error(
+      "La venta seleccionada no existe.",
+    );
+  }
+
+  return clonarVenta(venta);
 }
 
 export async function crearVenta(
@@ -399,14 +482,26 @@ export async function crearVenta(
     observaciones:
       datosValidados.observaciones,
 
+    subtotal:
+      datosValidados.subtotal,
+
+    tipoDescuento:
+      "Ninguno",
+
+    valorDescuento: 0,
+    montoDescuento: 0,
+
     total:
-      datosValidados.total,
+      datosValidados.subtotal,
 
     estadoPreparacion:
       "En preparación",
 
     estadoCobro:
       "Pendiente de cobro",
+
+    pagoId: null,
+    metodoPago: null,
 
     motivoAnulacion: null,
 
@@ -418,6 +513,7 @@ export async function crearVenta(
 
     fechaHoraListo: null,
     fechaHoraEntregado: null,
+    fechaHoraCobro: null,
     fechaHoraAnulacion: null,
 
     fechaHoraActualizacion:
@@ -519,6 +615,106 @@ export async function cambiarEstadoPreparacion(
   );
 }
 
+export async function registrarCobroVenta(
+  id: number,
+  datos:
+    RegistrarCobroVentaDto,
+): Promise<Venta> {
+  await esperar(400);
+
+  const ventas =
+    obtenerVentasPersistidas();
+
+  const indice =
+    ventas.findIndex(
+      (venta) => venta.id === id,
+    );
+
+  if (indice === -1) {
+    throw new Error(
+      "La venta seleccionada no existe.",
+    );
+  }
+
+  const ventaActual =
+    ventas[indice];
+
+  if (
+    ventaActual.estadoCobro ===
+    "Cobrada"
+  ) {
+    throw new Error(
+      "La venta ya fue cobrada.",
+    );
+  }
+
+  if (
+    ventaActual.estadoCobro ===
+      "Anulada" ||
+    ventaActual.estadoPreparacion ===
+      "Anulado"
+  ) {
+    throw new Error(
+      "Una venta anulada no puede cobrarse.",
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      datos.totalCobrado,
+    ) ||
+    datos.totalCobrado <= 0
+  ) {
+    throw new Error(
+      "El total cobrado no es válido.",
+    );
+  }
+
+  const ventaActualizada:
+    Venta = {
+    ...ventaActual,
+
+    subtotal:
+      ventaActual.subtotal,
+
+    tipoDescuento:
+      datos.tipoDescuento,
+
+    valorDescuento:
+      datos.valorDescuento,
+
+    montoDescuento:
+      datos.montoDescuento,
+
+    total:
+      datos.totalCobrado,
+
+    estadoCobro:
+      "Cobrada",
+
+    pagoId:
+      datos.pagoId,
+
+    metodoPago:
+      datos.metodoPago,
+
+    fechaHoraCobro:
+      datos.fechaHoraCobro,
+
+    fechaHoraActualizacion:
+      datos.fechaHoraCobro,
+  };
+
+  ventas[indice] =
+    ventaActualizada;
+
+  guardarVentas(ventas);
+
+  return clonarVenta(
+    ventaActualizada,
+  );
+}
+
 export async function anularVenta(
   id: number,
   motivo: string,
@@ -565,7 +761,7 @@ export async function anularVenta(
     "Cobrada"
   ) {
     throw new Error(
-      "Una venta cobrada deberá anularse desde el módulo de caja.",
+      "Una venta cobrada deberá anularse mediante un proceso de devolución.",
     );
   }
 

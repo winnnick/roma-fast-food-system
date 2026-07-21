@@ -1,3 +1,8 @@
+import type {
+  MetodoPago,
+  TipoDescuento,
+} from "./caja";
+
 export type EstadoPreparacion =
   | "En preparación"
   | "Listo"
@@ -31,6 +36,19 @@ export interface DetalleVenta {
   subtotal: number;
 }
 
+export interface RegistrarCobroVentaDto {
+  pagoId: number;
+
+  tipoDescuento: TipoDescuento;
+  valorDescuento: number;
+  montoDescuento: number;
+
+  totalCobrado: number;
+  metodoPago: MetodoPago;
+
+  fechaHoraCobro: string;
+}
+
 export interface Venta {
   id: number;
   numeroPedido: string;
@@ -40,6 +58,13 @@ export interface Venta {
 
   detalles: DetalleVenta[];
   observaciones: string | null;
+
+  subtotal: number;
+
+  tipoDescuento: TipoDescuento;
+  valorDescuento: number;
+  montoDescuento: number;
+
   total: number;
 
   estadoPreparacion:
@@ -48,12 +73,16 @@ export interface Venta {
   estadoCobro:
     EstadoCobro;
 
+  pagoId: number | null;
+  metodoPago: MetodoPago | null;
+
   motivoAnulacion: string | null;
 
   fechaHoraRegistro: string;
   fechaHoraInicioPreparacion: string;
   fechaHoraListo: string | null;
   fechaHoraEntregado: string | null;
+  fechaHoraCobro: string | null;
   fechaHoraAnulacion: string | null;
   fechaHoraActualizacion: string;
 }
