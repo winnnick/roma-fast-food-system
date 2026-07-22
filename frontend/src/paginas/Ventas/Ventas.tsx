@@ -1,11 +1,10 @@
+
 import {
-  Ban,
   CheckCircle2,
   CircleDollarSign,
   ClipboardList,
   ExternalLink,
   History,
-  LoaderCircle,
   Plus,
   RotateCcw,
   ShoppingCart,
@@ -34,11 +33,16 @@ import {
 } from "../../servicios/clienteServicio";
 
 import {
-  anularVenta,
   cambiarEstadoPreparacion,
-  crearVenta,
   listarVentas,
 } from "../../servicios/ventaServicio";
+
+import {
+  anularVentaConInventario,
+  evaluarVentaConInventario,
+  obtenerEstadoInventarioAnulacion,
+  registrarVentaConInventario,
+} from "../../servicios/ventaInventarioServicio";
 
 import {
   obtenerCajaAbierta,
@@ -61,6 +65,11 @@ import type {
 } from "../../tipos/venta";
 
 import type {
+  EvaluacionInventarioVenta,
+  TratamientoAnulacionInventario,
+} from "../../tipos/inventario";
+
+import type {
   RegistrarPagoVentaDto,
   SesionCaja,
 } from "../../tipos/caja";
@@ -73,6 +82,8 @@ import Modal from "../../shared/ui/Modal";
 import ModalConfirmacion from "../../shared/ui/ModalConfirmacion";
 import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
+import AlertaInventarioVenta from "./AlertaInventarioVenta";
+import FormularioAnulacionInventario from "./FormularioAnulacionInventario";
 import FormularioVenta from "./FormularioVenta";
 import FormularioCobro from "./FormularioCobro";
 import HistorialVentas from "./HistorialVentas";
@@ -86,6 +97,12 @@ type PestanaVentas =
 interface AccionEstado {
   venta: Venta;
   nuevoEstado: EstadoPreparacion;
+}
+
+interface VentaPendienteInventario {
+  datos: CrearVentaDto;
+  evaluacion:
+    EvaluacionInventarioVenta;
 }
 
 function obtenerMensajeError(
@@ -199,9 +216,30 @@ function Ventas() {
   ] = useState<Venta | null>(null);
 
   const [
-    motivoAnulacion,
-    setMotivoAnulacion,
-  ] = useState("");
+    tieneConsumoAnulacion,
+    setTieneConsumoAnulacion,
+  ] = useState(false);
+
+  const [
+    preparandoAnulacion,
+    setPreparandoAnulacion,
+  ] = useState(false);
+
+  const [
+    ventaPendienteInventario,
+    setVentaPendienteInventario,
+  ] =
+    useState<VentaPendienteInventario | null>(
+      null,
+    );
+
+  const [
+    evaluacionBloqueada,
+    setEvaluacionBloqueada,
+  ] =
+    useState<EvaluacionInventarioVenta | null>(
+      null,
+    );
 
   const [
     ventaParaCobrar,
@@ -358,71 +396,200 @@ function Ventas() {
       0,
     );
 
+  async function completarRegistroVenta(
+    datos: CrearVentaDto,
+    autorizaSaldoNegativo: boolean,
+  ) {
+    if (
+      !usuario ||
+      !puedeGestionar
+    ) {
+      return;
+    }
+
+    const resultado =
+      await registrarVentaConInventario(
+        datos,
+        usuario,
+        autorizaSaldoNegativo,
+      );
+
+    const { venta, evaluacion } =
+      resultado;
+
+    setClaveFormulario(
+      (clave) => clave + 1,
+    );
+
+    setVentaPendienteInventario(null);
+    setEvaluacionBloqueada(null);
+
+    await recargarVentas();
+
+    setPestanaActiva(
+      "preparacion",
+    );
+
+    let caja:
+      SesionCaja | null = null;
+
+    if (puedeCobrar) {
+      try {
+        caja =
+          await obtenerCajaAbierta();
+      } catch {
+        caja = null;
+      }
+    }
+
+    setCajaAbierta(caja);
+
+    const insumosBajos =
+      evaluacion.proyecciones.filter(
+        (item) =>
+          item.nivel === "Bajo",
+      ).length;
+
+    const insumosNegativos =
+      evaluacion.proyecciones.filter(
+        (item) =>
+          item.nivel === "Negativo",
+      ).length;
+
+    const sinReceta =
+      evaluacion.productosSinReceta.length;
+
+    const avisos: string[] = [];
+
+    if (insumosNegativos > 0) {
+      avisos.push(
+        `${insumosNegativos} insumo(s) quedaron con saldo negativo`,
+      );
+    }
+
+    if (insumosBajos > 0) {
+      avisos.push(
+        `${insumosBajos} insumo(s) quedaron en stock bajo`,
+      );
+    }
+
+    if (sinReceta > 0) {
+      avisos.push(
+        `${sinReceta} producto(s) no descontaron inventario por falta de receta`,
+      );
+    }
+
+    const complemento =
+      avisos.length > 0
+        ? ` Inventario: ${avisos.join("; ")}.`
+        : " El inventario fue actualizado automáticamente.";
+
+    if (
+      puedeCobrar &&
+      caja
+    ) {
+      setVentaParaCobrar(
+        venta,
+      );
+
+      setNotificacion({
+        tipo:
+          insumosNegativos > 0 ||
+          sinReceta > 0
+            ? "info"
+            : "exito",
+
+        titulo:
+          "Pedido registrado",
+
+        mensaje:
+          `${venta.numeroPedido} fue enviado a preparación.${complemento} Puedes registrar el cobro ahora.`,
+      });
+    } else {
+      setNotificacion({
+        tipo: "info",
+
+        titulo:
+          "Pedido registrado",
+
+        mensaje:
+          `${venta.numeroPedido} fue enviado a preparación y quedó pendiente de cobro.${complemento}`,
+      });
+    }
+  }
+
   async function guardarVenta(
     datos: CrearVentaDto,
   ) {
-    if (!puedeGestionar) {
+    if (
+      !usuario ||
+      !puedeGestionar
+    ) {
       return;
     }
 
     try {
       setProcesandoOperacion(true);
 
-      const venta =
-        await crearVenta(datos);
-
-      setClaveFormulario(
-        (clave) => clave + 1,
-      );
-
-      await recargarVentas();
-
-      setPestanaActiva(
-        "preparacion",
-      );
-
-      let caja:
-        SesionCaja | null = null;
-
-      if (puedeCobrar) {
-        try {
-          caja =
-            await obtenerCajaAbierta();
-        } catch {
-          caja = null;
-        }
-      }
-
-      setCajaAbierta(caja);
-
-      if (
-        puedeCobrar &&
-        caja
-      ) {
-        setVentaParaCobrar(
-          venta,
+      const evaluacion =
+        await evaluarVentaConInventario(
+          datos,
         );
 
-        setNotificacion({
-          tipo: "exito",
+      if (evaluacion.bloqueada) {
+        setEvaluacionBloqueada(
+          evaluacion,
+        );
 
-          titulo:
-            "Pedido registrado",
-
-          mensaje:
-            `${venta.numeroPedido} fue enviado a preparación. Puedes registrar el cobro ahora.`,
-        });
-      } else {
-        setNotificacion({
-          tipo: "info",
-
-          titulo:
-            "Pedido registrado",
-
-          mensaje:
-            `${venta.numeroPedido} fue enviado a preparación y quedó pendiente de cobro.`,
-        });
+        return;
       }
+
+      if (
+        evaluacion.requiereConfirmacion
+      ) {
+        setVentaPendienteInventario({
+          datos,
+          evaluacion,
+        });
+
+        return;
+      }
+
+      await completarRegistroVenta(
+        datos,
+        false,
+      );
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+
+        titulo:
+          "No se pudo registrar el pedido",
+
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    } finally {
+      setProcesandoOperacion(false);
+    }
+  }
+
+  async function confirmarVentaConSaldoNegativo() {
+    if (
+      !ventaPendienteInventario ||
+      !usuario ||
+      !puedeGestionar
+    ) {
+      return;
+    }
+
+    try {
+      setProcesandoOperacion(true);
+
+      await completarRegistroVenta(
+        ventaPendienteInventario.datos,
+        true,
+      );
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
@@ -610,7 +777,31 @@ function Ventas() {
     }
 
     setVentaParaAnular(venta);
-    setMotivoAnulacion("");
+    setTieneConsumoAnulacion(false);
+    setPreparandoAnulacion(true);
+
+    obtenerEstadoInventarioAnulacion(
+      venta.id,
+    )
+      .then((estado) => {
+        setTieneConsumoAnulacion(
+          estado.tieneConsumoAplicado,
+        );
+      })
+      .catch((error: unknown) => {
+        setNotificacion({
+          tipo: "error",
+          titulo:
+            "No se pudo revisar el inventario",
+          mensaje:
+            obtenerMensajeError(error),
+        });
+
+        setTieneConsumoAnulacion(false);
+      })
+      .finally(() => {
+        setPreparandoAnulacion(false);
+      });
   }
 
   function cerrarAnulacion() {
@@ -619,12 +810,18 @@ function Ventas() {
     }
 
     setVentaParaAnular(null);
-    setMotivoAnulacion("");
+    setTieneConsumoAnulacion(false);
+    setPreparandoAnulacion(false);
   }
 
-  async function confirmarAnulacion() {
+  async function confirmarAnulacion(
+    motivo: string,
+    tratamiento:
+      TratamientoAnulacionInventario | null,
+  ) {
     if (
       !ventaParaAnular ||
+      !usuario ||
       !puedeGestionar
     ) {
       return;
@@ -634,9 +831,11 @@ function Ventas() {
       setProcesandoOperacion(true);
 
       const venta =
-        await anularVenta(
-          ventaParaAnular.id,
-          motivoAnulacion,
+        await anularVentaConInventario(
+          ventaParaAnular,
+          motivo,
+          tratamiento,
+          usuario,
         );
 
       setNotificacion({
@@ -646,11 +845,18 @@ function Ventas() {
           "Pedido anulado",
 
         mensaje:
-          `${venta.numeroPedido} fue anulado correctamente.`,
+          tratamiento ===
+          "Reintegrar insumos"
+            ? `${venta.numeroPedido} fue anulado y los insumos retornaron al inventario.`
+            : tratamiento ===
+                "Registrar como merma"
+              ? `${venta.numeroPedido} fue anulado y sus insumos quedaron registrados como merma.`
+              : `${venta.numeroPedido} fue anulado correctamente.`,
       });
 
       setVentaParaAnular(null);
-      setMotivoAnulacion("");
+      setTieneConsumoAnulacion(false);
+      setPreparandoAnulacion(false);
 
       await recargarVentas();
     } catch (error: unknown) {
@@ -1186,142 +1392,94 @@ function Ventas() {
 
       <Modal
         abierto={Boolean(
+          ventaPendienteInventario,
+        )}
+        titulo="Advertencia de inventario"
+        descripcion="Revisa los insumos que quedarán con saldo negativo antes de continuar."
+        ancho="grande"
+        alCerrar={() => {
+          if (!procesandoOperacion) {
+            setVentaPendienteInventario(null);
+          }
+        }}
+      >
+        {ventaPendienteInventario && (
+          <AlertaInventarioVenta
+            evaluacion={
+              ventaPendienteInventario.evaluacion
+            }
+            cargando={
+              procesandoOperacion
+            }
+            alConfirmar={() =>
+              void confirmarVentaConSaldoNegativo()
+            }
+            alCancelar={() =>
+              setVentaPendienteInventario(null)
+            }
+          />
+        )}
+      </Modal>
+
+      <Modal
+        abierto={Boolean(
+          evaluacionBloqueada,
+        )}
+        titulo="Inventario no disponible"
+        descripcion="La configuración de uno o más insumos impide registrar este pedido."
+        ancho="grande"
+        alCerrar={() =>
+          setEvaluacionBloqueada(null)
+        }
+      >
+        {evaluacionBloqueada && (
+          <AlertaInventarioVenta
+            evaluacion={
+              evaluacionBloqueada
+            }
+            cargando={false}
+            alConfirmar={() => undefined}
+            alCancelar={() =>
+              setEvaluacionBloqueada(null)
+            }
+          />
+        )}
+      </Modal>
+
+      <Modal
+        abierto={Boolean(
           ventaParaAnular,
         )}
         titulo="Anular pedido"
         descripcion={
           ventaParaAnular
-            ? `Indica por qué se anulará ${ventaParaAnular.numeroPedido}.`
+            ? `Define el motivo y el tratamiento de inventario para ${ventaParaAnular.numeroPedido}.`
             : ""
         }
-        ancho="mediano"
+        ancho="grande"
         alCerrar={cerrarAnulacion}
       >
-        <div className="p-5 sm:p-6">
-          <label
-            htmlFor="motivo-anulacion"
-            className="
-              text-sm font-bold
-              text-slate-700
-            "
-          >
-            Motivo de anulación
-          </label>
-
-          <textarea
-            id="motivo-anulacion"
-            value={motivoAnulacion}
-            disabled={
+        {ventaParaAnular && (
+          <FormularioAnulacionInventario
+            key={ventaParaAnular.id}
+            venta={ventaParaAnular}
+            tieneConsumoInventario={
+              tieneConsumoAnulacion
+            }
+            preparandoInventario={
+              preparandoAnulacion
+            }
+            cargando={
               procesandoOperacion
             }
-            maxLength={200}
-            rows={4}
-            placeholder="Ej.: El cliente canceló el pedido."
-            onChange={(evento) =>
-              setMotivoAnulacion(
-                evento.target.value,
-              )
+            alConfirmar={
+              confirmarAnulacion
             }
-            className="
-              mt-2 w-full resize-none
-              rounded-xl border
-              border-slate-300
-              px-4 py-3
-              text-sm outline-none
-              focus:border-red-600
-              focus:ring-4
-              focus:ring-red-100
-              disabled:bg-slate-100
-            "
+            alCancelar={
+              cerrarAnulacion
+            }
           />
-
-          <div
-            className="
-              mt-1 flex
-              justify-between gap-3
-            "
-          >
-            <p
-              className="
-                text-xs text-slate-500
-              "
-            >
-              Mínimo 5 caracteres.
-            </p>
-
-            <span
-              className="
-                text-xs text-slate-400
-              "
-            >
-              {motivoAnulacion.length}
-              /200
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="
-            flex flex-col-reverse
-            gap-3 border-t
-            border-slate-100
-            bg-slate-50
-            px-5 py-4
-            sm:flex-row
-            sm:justify-end sm:px-6
-          "
-        >
-          <button
-            type="button"
-            disabled={
-              procesandoOperacion
-            }
-            onClick={cerrarAnulacion}
-            className="
-              rounded-xl border
-              border-slate-300
-              bg-white px-5 py-3
-              text-sm font-bold
-              text-slate-700
-              hover:bg-slate-100
-              disabled:opacity-50
-            "
-          >
-            Cancelar
-          </button>
-
-          <button
-            type="button"
-            disabled={
-              procesandoOperacion ||
-              motivoAnulacion
-                .trim().length < 5
-            }
-            onClick={() =>
-              void confirmarAnulacion()
-            }
-            className="
-              inline-flex items-center
-              justify-center gap-2
-              rounded-xl
-              bg-red-700 px-5 py-3
-              text-sm font-bold
-              text-white
-              hover:bg-red-800
-              disabled:opacity-50
-            "
-          >
-            {procesandoOperacion && (
-              <LoaderCircle
-                size={17}
-                className="animate-spin"
-              />
-            )}
-
-            <Ban size={17} />
-            Confirmar anulación
-          </button>
-        </div>
+        )}
       </Modal>
     </div>
   );
