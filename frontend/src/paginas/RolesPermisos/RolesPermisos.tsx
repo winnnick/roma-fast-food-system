@@ -33,6 +33,10 @@ import NotificacionFlotante, {
 } from "../../shared/feedback/NotificacionFlotante";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarPermisosRol,
   dependenciasPermisos,
   listarRoles,
@@ -442,6 +446,20 @@ function RolesPermisos() {
         ...rolActualizado.permisos,
       ]);
 
+      await auditarAccion({
+        modulo: "Roles y permisos",
+        accion: "Actualizar permisos",
+        entidad: "Rol",
+        entidadId:
+          rolActualizado.rol,
+        descripcion:
+          `Se actualizaron los permisos del rol ${rolActualizado.nombre}.`,
+        datosAnteriores:
+          rolActual,
+        datosPosteriores:
+          rolActualizado,
+      });
+
       setNotificacion({
         tipo: "exito",
         titulo:
@@ -498,6 +516,21 @@ function RolesPermisos() {
       setConfirmarRestablecimiento(
         false,
       );
+
+      await auditarAccion({
+        modulo: "Roles y permisos",
+        accion: "Restablecer permisos",
+        entidad: "Rol",
+        entidadId:
+          rolRestablecido.rol,
+        descripcion:
+          `Se restablecieron los permisos iniciales del rol ${rolRestablecido.nombre}.`,
+        datosAnteriores:
+          rolActual,
+        datosPosteriores:
+          rolRestablecido,
+        nivel: "Advertencia",
+      });
 
       setNotificacion({
         tipo: "exito",

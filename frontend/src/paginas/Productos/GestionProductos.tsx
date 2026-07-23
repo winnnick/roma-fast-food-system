@@ -24,6 +24,10 @@ import {
 } from "react";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarProducto,
   cambiarDisponibilidadProducto,
   cambiarEstadoProducto,
@@ -471,10 +475,25 @@ function GestionProductos({
 
     try {
       if (productoEnEdicion) {
-        await actualizarProducto(
-          productoEnEdicion.id,
-          datos,
-        );
+        const productoActualizado =
+          await actualizarProducto(
+            productoEnEdicion.id,
+            datos,
+          );
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Actualizar producto",
+          entidad: "Producto",
+          entidadId:
+            productoActualizado.id,
+          descripcion:
+            `Se actualizó el producto ${productoActualizado.nombre}.`,
+          datosAnteriores:
+            productoEnEdicion,
+          datosPosteriores:
+            productoActualizado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -484,7 +503,20 @@ function GestionProductos({
             "Los cambios del producto fueron guardados correctamente.",
         });
       } else {
-        await crearProducto(datos);
+        const productoCreado =
+          await crearProducto(datos);
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Crear producto",
+          entidad: "Producto",
+          entidadId:
+            productoCreado.id,
+          descripcion:
+            `Se registró el producto ${productoCreado.nombre}.`,
+          datosPosteriores:
+            productoCreado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -530,10 +562,24 @@ function GestionProductos({
       const nuevaDisponibilidad =
         !producto.disponible;
 
-      await cambiarDisponibilidadProducto(
-        producto.id,
-        nuevaDisponibilidad,
-      );
+      const productoActualizado =
+        await cambiarDisponibilidadProducto(
+          producto.id,
+          nuevaDisponibilidad,
+        );
+
+      await auditarAccion({
+        modulo: "Productos",
+        accion: "Cambiar disponibilidad",
+        entidad: "Producto",
+        entidadId:
+          productoActualizado.id,
+        descripcion:
+          `${productoActualizado.nombre} quedó ${nuevaDisponibilidad ? "disponible" : "no disponible"}.`,
+        datosAnteriores: producto,
+        datosPosteriores:
+          productoActualizado,
+      });
 
       await recargarDatos();
 
@@ -577,10 +623,24 @@ function GestionProductos({
       const nuevoDestacado =
         !producto.destacado;
 
-      await cambiarProductoDestacado(
-        producto.id,
-        nuevoDestacado,
-      );
+      const productoActualizado =
+        await cambiarProductoDestacado(
+          producto.id,
+          nuevoDestacado,
+        );
+
+      await auditarAccion({
+        modulo: "Productos",
+        accion: "Cambiar destacado",
+        entidad: "Producto",
+        entidadId:
+          productoActualizado.id,
+        descripcion:
+          `${productoActualizado.nombre} ${nuevoDestacado ? "fue marcado" : "dejó de estar marcado"} como destacado.`,
+        datosAnteriores: producto,
+        datosPosteriores:
+          productoActualizado,
+      });
 
       await recargarDatos();
 
@@ -636,10 +696,32 @@ function GestionProductos({
     setCambiandoEstado(true);
 
     try {
-      await cambiarEstadoProducto(
-        accionEstado.producto.id,
-        accionEstado.nuevoEstado,
-      );
+      const productoActualizado =
+        await cambiarEstadoProducto(
+          accionEstado.producto.id,
+          accionEstado.nuevoEstado,
+        );
+
+      await auditarAccion({
+        modulo: "Productos",
+        accion:
+          accionEstado.nuevoEstado === "Activo"
+            ? "Activar producto"
+            : "Desactivar producto",
+        entidad: "Producto",
+        entidadId:
+          productoActualizado.id,
+        descripcion:
+          `${productoActualizado.nombre} fue ${accionEstado.nuevoEstado === "Activo" ? "activado" : "desactivado"}.`,
+        datosAnteriores:
+          accionEstado.producto,
+        datosPosteriores:
+          productoActualizado,
+        nivel:
+          accionEstado.nuevoEstado === "Inactivo"
+            ? "Advertencia"
+            : "Información",
+      });
 
       await recargarDatos();
 

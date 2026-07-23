@@ -16,6 +16,10 @@ import {
 } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   formatearCantidadInventario,
   listarConteosFisicosInventario,
   listarInsumosInventario,
@@ -149,6 +153,23 @@ function PanelConteos({
           (detalle) =>
             detalle.variacion !== 0,
         ).length;
+
+      await auditarAccion(
+        {
+          modulo: "Conteos físicos",
+          accion: "Registrar conteo físico",
+          entidad: "Conteo físico",
+          entidadId: conteo.id,
+          descripcion:
+            `${usuario.nombreCompleto} registró un conteo de ${conteo.detalles.length} insumos con ${diferencias} diferencias.`,
+          datosPosteriores: conteo,
+          nivel:
+            diferencias > 0
+              ? "Advertencia"
+              : "Información",
+        },
+        usuario,
+      );
 
       setModalAbierto(false);
 

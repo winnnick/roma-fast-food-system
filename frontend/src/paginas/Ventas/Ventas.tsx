@@ -21,6 +21,10 @@ import {
 } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   listarCategorias,
 } from "../../servicios/categoriaServicio";
 
@@ -417,6 +421,57 @@ function Ventas() {
     const { venta, evaluacion } =
       resultado;
 
+    const cantidadNegativos =
+      evaluacion.proyecciones.filter(
+        (item) =>
+          item.nivel === "Negativo",
+      ).length;
+
+    await auditarAccion(
+      {
+        modulo: "Ventas",
+        accion: "Registrar venta",
+        entidad: "Venta",
+        entidadId: venta.id,
+        descripcion:
+          `${usuario.nombreCompleto} registró ${venta.numeroPedido} por ${formatearMoneda(venta.total)}.`,
+        datosPosteriores: venta,
+        nivel:
+          cantidadNegativos > 0
+            ? "Advertencia"
+            : "Información",
+      },
+      usuario,
+    );
+
+    await auditarAccion(
+      {
+        modulo: "Inventario",
+        accion: "Consumir receta por venta",
+        entidad: "Venta",
+        entidadId: venta.id,
+        descripcion:
+          `El inventario fue procesado automáticamente para ${venta.numeroPedido}.`,
+        datosPosteriores: {
+          numeroPedido:
+            venta.numeroPedido,
+          proyecciones:
+            evaluacion.proyecciones,
+          productosSinReceta:
+            evaluacion.productosSinReceta,
+          autorizoSaldoNegativo:
+            autorizaSaldoNegativo,
+        },
+        nivel:
+          cantidadNegativos > 0
+            ? "Advertencia"
+            : "Información",
+        origen:
+          "Proceso automático",
+      },
+      usuario,
+    );
+
     setClaveFormulario(
       (clave) => clave + 1,
     );
@@ -637,6 +692,18 @@ function Ventas() {
           accionEstado.nuevoEstado,
         );
 
+      await auditarAccion({
+        modulo: "Preparación",
+        accion: "Cambiar estado de preparación",
+        entidad: "Venta",
+        entidadId: venta.id,
+        descripcion:
+          `${venta.numeroPedido} cambió de “${accionEstado.venta.estadoPreparacion}” a “${venta.estadoPreparacion}”.`,
+        datosAnteriores:
+          accionEstado.venta,
+        datosPosteriores: venta,
+      });
+
       setNotificacion({
         tipo: "exito",
 
@@ -738,6 +805,23 @@ function Ventas() {
           usuario,
         );
 
+      await auditarAccion(
+        {
+          modulo: "Caja",
+          accion: "Registrar cobro",
+          entidad: "Pago",
+          entidadId: pago.id,
+          descripcion:
+            `${usuario.nombreCompleto} cobró ${pago.numeroPedido} por ${formatearMoneda(pago.totalCobrado)} mediante ${pago.metodoPago}.`,
+          datosPosteriores: pago,
+          nivel:
+            pago.montoDescuento > 0
+              ? "Advertencia"
+              : "Información",
+        },
+        usuario,
+      );
+
       setNotificacion({
         tipo: "exito",
 
@@ -837,6 +921,49 @@ function Ventas() {
           tratamiento,
           usuario,
         );
+
+      await auditarAccion(
+        {
+          modulo: "Ventas",
+          accion: "Anular venta",
+          entidad: "Venta",
+          entidadId: venta.id,
+          descripcion:
+            `${usuario.nombreCompleto} anuló ${venta.numeroPedido}. Motivo: ${motivo}.`,
+          datosAnteriores:
+            ventaParaAnular,
+          datosPosteriores: venta,
+          nivel: "Crítico",
+        },
+        usuario,
+      );
+
+      if (tratamiento) {
+        await auditarAccion(
+          {
+            modulo: "Inventario",
+            accion:
+              tratamiento === "Reintegrar insumos"
+                ? "Reintegrar insumos"
+                : "Registrar merma",
+            entidad: "Venta",
+            entidadId: venta.id,
+            descripcion:
+              `${tratamiento} por la anulación de ${venta.numeroPedido}.`,
+            datosPosteriores: {
+              numeroPedido:
+                venta.numeroPedido,
+              tratamiento,
+              motivo,
+            },
+            nivel:
+              tratamiento === "Registrar como merma"
+                ? "Advertencia"
+                : "Información",
+          },
+          usuario,
+        );
+      }
 
       setNotificacion({
         tipo: "exito",

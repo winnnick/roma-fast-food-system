@@ -19,6 +19,10 @@ import {
 } from "react";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarCategoria,
   cambiarEstadoCategoria,
   crearCategoria,
@@ -262,10 +266,25 @@ function GestionCategorias({
     setGuardando(true);
     try {
       if (categoriaEnEdicion) {
-        await actualizarCategoria(
-          categoriaEnEdicion.id,
-          datos,
-        );
+        const categoriaActualizada =
+          await actualizarCategoria(
+            categoriaEnEdicion.id,
+            datos,
+          );
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Actualizar categoría",
+          entidad: "Categoría",
+          entidadId:
+            categoriaActualizada.id,
+          descripcion:
+            `Se actualizó la categoría ${categoriaActualizada.nombre}.`,
+          datosAnteriores:
+            categoriaEnEdicion,
+          datosPosteriores:
+            categoriaActualizada,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -275,7 +294,20 @@ function GestionCategorias({
             "Los cambios se guardaron correctamente.",
         });
       } else {
-        await crearCategoria(datos);
+        const categoriaCreada =
+          await crearCategoria(datos);
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Crear categoría",
+          entidad: "Categoría",
+          entidadId:
+            categoriaCreada.id,
+          descripcion:
+            `Se registró la categoría ${categoriaCreada.nombre}.`,
+          datosPosteriores:
+            categoriaCreada,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -332,10 +364,32 @@ function GestionCategorias({
     setCambiandoEstado(true);
 
     try {
-      await cambiarEstadoCategoria(
-        accionCategoria.categoria.id,
-        accionCategoria.nuevoEstado,
-      );
+      const categoriaActualizada =
+        await cambiarEstadoCategoria(
+          accionCategoria.categoria.id,
+          accionCategoria.nuevoEstado,
+        );
+
+      await auditarAccion({
+        modulo: "Productos",
+        accion:
+          accionCategoria.nuevoEstado === "Activo"
+            ? "Activar categoría"
+            : "Desactivar categoría",
+        entidad: "Categoría",
+        entidadId:
+          categoriaActualizada.id,
+        descripcion:
+          `${categoriaActualizada.nombre} fue ${accionCategoria.nuevoEstado === "Activo" ? "activada" : "desactivada"}.`,
+        datosAnteriores:
+          accionCategoria.categoria,
+        datosPosteriores:
+          categoriaActualizada,
+        nivel:
+          accionCategoria.nuevoEstado === "Inactivo"
+            ? "Advertencia"
+            : "Información",
+      });
 
       await recargarDatos();
 

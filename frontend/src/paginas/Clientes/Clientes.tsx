@@ -21,6 +21,10 @@ import {
 import { useAuth } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarCliente,
   cambiarEstadoCliente,
   crearCliente,
@@ -383,10 +387,25 @@ function Clientes() {
       setGuardando(true);
 
       if (clienteSeleccionado) {
-        await actualizarCliente(
-          clienteSeleccionado.id,
-          datos,
-        );
+        const clienteActualizado =
+          await actualizarCliente(
+            clienteSeleccionado.id,
+            datos,
+          );
+
+        await auditarAccion({
+          modulo: "Clientes",
+          accion: "Actualizar cliente",
+          entidad: "Cliente",
+          entidadId:
+            clienteActualizado.id,
+          descripcion:
+            `Se actualizó el cliente ${clienteActualizado.nombreCompleto}.`,
+          datosAnteriores:
+            clienteSeleccionado,
+          datosPosteriores:
+            clienteActualizado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -396,7 +415,20 @@ function Clientes() {
             "La información del cliente fue modificada correctamente.",
         });
       } else {
-        await crearCliente(datos);
+        const clienteCreado =
+          await crearCliente(datos);
+
+        await auditarAccion({
+          modulo: "Clientes",
+          accion: "Crear cliente",
+          entidad: "Cliente",
+          entidadId:
+            clienteCreado.id,
+          descripcion:
+            `Se registró el cliente ${clienteCreado.nombreCompleto}.`,
+          datosPosteriores:
+            clienteCreado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -442,10 +474,28 @@ function Clientes() {
           ? "Inactivo"
           : "Activo";
 
-      await cambiarEstadoCliente(
-        clienteCambioEstado.id,
-        nuevoEstado,
-      );
+      const clienteActualizado =
+        await cambiarEstadoCliente(
+          clienteCambioEstado.id,
+          nuevoEstado,
+        );
+
+      await auditarAccion({
+        modulo: "Clientes",
+        accion:
+          nuevoEstado === "Activo"
+            ? "Activar cliente"
+            : "Desactivar cliente",
+        entidad: "Cliente",
+        entidadId:
+          clienteActualizado.id,
+        descripcion:
+          `${clienteActualizado.nombreCompleto} fue ${nuevoEstado === "Activo" ? "activado" : "desactivado"}.`,
+        datosAnteriores:
+          clienteCambioEstado,
+        datosPosteriores:
+          clienteActualizado,
+      });
 
       setNotificacion({
         tipo: "exito",

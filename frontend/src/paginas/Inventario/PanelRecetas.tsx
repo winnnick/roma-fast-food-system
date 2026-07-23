@@ -21,6 +21,10 @@ import {
 } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   guardarNuevaVersionReceta,
   listarInsumosInventario,
   listarRecetasInventario,
@@ -276,6 +280,19 @@ function PanelRecetas({
           datos,
           usuario,
         );
+
+      await auditarAccion(
+        {
+          modulo: "Recetas",
+          accion: "Crear versión de receta",
+          entidad: "Receta",
+          entidadId: receta.id,
+          descripcion:
+            `${usuario.nombreCompleto} creó la versión ${receta.version} de la receta de ${receta.productoNombre}.`,
+          datosPosteriores: receta,
+        },
+        usuario,
+      );
 
       setProductoSeleccionado(null);
 

@@ -31,6 +31,10 @@ import {
 import { useAuth } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarInsumoInventario,
   calcularNivelStockInsumo,
   cambiarEstadoInsumoInventario,
@@ -241,6 +245,21 @@ function Inventario() {
           usuario,
         );
 
+        await auditarAccion(
+          {
+            modulo: "Inventario",
+            accion: "Actualizar insumo",
+            entidad: "Insumo",
+            entidadId: actualizado.id,
+            descripcion: `${actualizado.nombre} fue actualizado.`,
+            datosAnteriores:
+              insumoSeleccionado,
+            datosPosteriores:
+              actualizado,
+          },
+          usuario,
+        );
+
         setNotificacion({
           tipo: "exito",
           titulo: "Insumo actualizado",
@@ -261,6 +280,18 @@ function Inventario() {
             politicaFaltante: datos.politicaFaltante,
             controlEconomico: datos.controlEconomico,
             costoPorPresentacionInicial: datos.costoPorPresentacion,
+          },
+          usuario,
+        );
+
+        await auditarAccion(
+          {
+            modulo: "Inventario",
+            accion: "Crear insumo",
+            entidad: "Insumo",
+            entidadId: creado.id,
+            descripcion: `${creado.nombre} fue registrado en el inventario.`,
+            datosPosteriores: creado,
           },
           usuario,
         );
@@ -292,6 +323,20 @@ function Inventario() {
     try {
       setProcesando(true);
       const movimiento = await registrarEntradaInventario(datos, usuario);
+
+      await auditarAccion(
+        {
+          modulo: "Inventario",
+          accion: "Registrar entrada",
+          entidad: "Movimiento de inventario",
+          entidadId: movimiento.id,
+          descripcion:
+            `${usuario.nombreCompleto} registró una entrada de ${formatearCantidadInventario(movimiento.cantidad, movimiento.unidadBase)} para ${movimiento.insumoNombre}.`,
+          datosPosteriores: movimiento,
+        },
+        usuario,
+      );
+
       setInsumoEntrada(null);
       setNotificacion({
         tipo: "exito",
@@ -319,6 +364,21 @@ function Inventario() {
     try {
       setProcesando(true);
       const movimiento = await registrarAjusteManualInventario(datos, usuario);
+
+      await auditarAccion(
+        {
+          modulo: "Inventario",
+          accion: "Registrar ajuste",
+          entidad: "Movimiento de inventario",
+          entidadId: movimiento.id,
+          descripcion:
+            `${usuario.nombreCompleto} ajustó ${movimiento.insumoNombre} en ${formatearCantidadInventario(movimiento.cantidad, movimiento.unidadBase)}.`,
+          datosPosteriores: movimiento,
+          nivel: "Advertencia",
+        },
+        usuario,
+      );
+
       setInsumoAjuste(null);
       setNotificacion({
         tipo: "exito",
@@ -350,6 +410,29 @@ function Inventario() {
         accionEstado.nuevoEstado,
         usuario,
       );
+      await auditarAccion(
+        {
+          modulo: "Inventario",
+          accion:
+            actualizado.estado === "Activo"
+              ? "Activar insumo"
+              : "Desactivar insumo",
+          entidad: "Insumo",
+          entidadId: actualizado.id,
+          descripcion:
+            `${actualizado.nombre} fue ${actualizado.estado === "Activo" ? "activado" : "desactivado"}.`,
+          datosAnteriores:
+            accionEstado.insumo,
+          datosPosteriores:
+            actualizado,
+          nivel:
+            actualizado.estado === "Inactivo"
+              ? "Advertencia"
+              : "Información",
+        },
+        usuario,
+      );
+
       setAccionEstado(null);
       setNotificacion({
         tipo: "exito",

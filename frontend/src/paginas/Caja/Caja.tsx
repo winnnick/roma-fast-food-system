@@ -24,6 +24,10 @@ import {
 } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   abrirCaja,
   calcularResumenSesionCaja,
   cerrarCaja,
@@ -301,6 +305,19 @@ function Caja() {
           usuario,
         );
 
+      await auditarAccion(
+        {
+          modulo: "Caja",
+          accion: "Abrir caja",
+          entidad: "Sesión de caja",
+          entidadId: caja.id,
+          descripcion:
+            `${usuario.nombreCompleto} abrió la caja N.º ${caja.id} con ${formatearMoneda(caja.montoInicial)}.`,
+          datosPosteriores: caja,
+        },
+        usuario,
+      );
+
       setModalApertura(false);
 
       setNotificacion({
@@ -348,6 +365,28 @@ function Caja() {
           usuario,
         );
 
+      await auditarAccion(
+        {
+          modulo: "Caja",
+          accion:
+            movimiento.tipo === "Ingreso"
+              ? "Registrar ingreso"
+              : "Registrar egreso",
+          entidad: "Movimiento de caja",
+          entidadId:
+            movimiento.id,
+          descripcion:
+            `${usuario.nombreCompleto} registró ${movimiento.tipo.toLocaleLowerCase("es")} por ${formatearMoneda(movimiento.monto)}: ${movimiento.concepto}.`,
+          datosPosteriores:
+            movimiento,
+          nivel:
+            movimiento.tipo === "Egreso"
+              ? "Advertencia"
+              : "Información",
+        },
+        usuario,
+      );
+
       setModalMovimiento(false);
 
       setNotificacion({
@@ -394,6 +433,23 @@ function Caja() {
           datos,
           usuario,
         );
+
+      await auditarAccion(
+        {
+          modulo: "Caja",
+          accion: "Cerrar caja",
+          entidad: "Sesión de caja",
+          entidadId: caja.id,
+          descripcion:
+            `${usuario.nombreCompleto} cerró la caja N.º ${caja.id} con una diferencia de ${formatearMoneda(caja.diferencia ?? 0)}.`,
+          datosPosteriores: caja,
+          nivel:
+            Math.abs(caja.diferencia ?? 0) > 0.009
+              ? "Advertencia"
+              : "Información",
+        },
+        usuario,
+      );
 
       setModalCierre(false);
 

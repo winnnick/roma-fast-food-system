@@ -13,6 +13,10 @@ import type {
   SesionUsuario,
 } from "../tipos/auth";
 
+import {
+  auditarAccion,
+} from "../servicios/auditoriaAccionesServicio";
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -55,9 +59,46 @@ export function AuthProvider({
       CLAVE_SESION,
       JSON.stringify(nuevaSesion),
     );
+
+    void auditarAccion(
+      {
+        modulo: "Autenticación",
+        accion: "Iniciar sesión",
+        entidad: "Sesión",
+        entidadId:
+          nuevaSesion.usuario.id,
+        descripcion:
+          `${nuevaSesion.usuario.nombreCompleto} inició sesión en el sistema.`,
+        datosPosteriores: {
+          fechaInicio:
+            nuevaSesion.fechaInicio,
+          usuario:
+            nuevaSesion.usuario,
+        },
+      },
+      nuevaSesion.usuario,
+    );
   }
 
   function cerrarSesion() {
+    const usuarioActual =
+      sesion?.usuario ?? null;
+
+    if (usuarioActual) {
+      void auditarAccion(
+        {
+          modulo: "Autenticación",
+          accion: "Cerrar sesión",
+          entidad: "Sesión",
+          entidadId:
+            usuarioActual.id,
+          descripcion:
+            `${usuarioActual.nombreCompleto} cerró su sesión.`,
+        },
+        usuarioActual,
+      );
+    }
+
     setSesion(null);
     localStorage.removeItem(CLAVE_SESION);
   }

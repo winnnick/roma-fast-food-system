@@ -30,6 +30,10 @@ import NotificacionFlotante, {
 import { useAuth } from "../../contextos/AuthContext";
 
 import {
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
+
+import {
   actualizarUsuario,
   cambiarEstadoUsuario,
   crearUsuario,
@@ -286,10 +290,25 @@ useEffect(() => {
       setGuardando(true);
 
       if (usuarioSeleccionado) {
-        await actualizarUsuario(
-          usuarioSeleccionado.id,
-          datos as ActualizarUsuarioDto,
-        );
+        const usuarioActualizado =
+          await actualizarUsuario(
+            usuarioSeleccionado.id,
+            datos as ActualizarUsuarioDto,
+          );
+
+        await auditarAccion({
+          modulo: "Usuarios",
+          accion: "Actualizar usuario",
+          entidad: "Usuario",
+          entidadId:
+            usuarioActualizado.id,
+          descripcion:
+            `Se actualizó la cuenta de ${usuarioActualizado.nombreCompleto}.`,
+          datosAnteriores:
+            usuarioSeleccionado,
+          datosPosteriores:
+            usuarioActualizado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -298,9 +317,22 @@ useEffect(() => {
             "La información del usuario fue modificada correctamente.",
         });
       } else {
-        await crearUsuario(
-          datos as CrearUsuarioDto,
-        );
+        const usuarioCreado =
+          await crearUsuario(
+            datos as CrearUsuarioDto,
+          );
+
+        await auditarAccion({
+          modulo: "Usuarios",
+          accion: "Crear usuario",
+          entidad: "Usuario",
+          entidadId:
+            usuarioCreado.id,
+          descripcion:
+            `Se creó la cuenta de ${usuarioCreado.nombreCompleto} con el rol ${usuarioCreado.rol}.`,
+          datosPosteriores:
+            usuarioCreado,
+        });
 
         setNotificacion({
           tipo: "exito",
@@ -346,10 +378,32 @@ useEffect(() => {
           ? "Inactivo"
           : "Activo";
 
-      await cambiarEstadoUsuario(
-        usuarioCambioEstado.id,
-        nuevoEstado,
-      );
+      const usuarioActualizado =
+        await cambiarEstadoUsuario(
+          usuarioCambioEstado.id,
+          nuevoEstado,
+        );
+
+      await auditarAccion({
+        modulo: "Usuarios",
+        accion:
+          nuevoEstado === "Activo"
+            ? "Activar usuario"
+            : "Desactivar usuario",
+        entidad: "Usuario",
+        entidadId:
+          usuarioActualizado.id,
+        descripcion:
+          `${usuarioActualizado.nombreCompleto} fue ${nuevoEstado === "Activo" ? "activado" : "desactivado"}.`,
+        datosAnteriores:
+          usuarioCambioEstado,
+        datosPosteriores:
+          usuarioActualizado,
+        nivel:
+          nuevoEstado === "Inactivo"
+            ? "Advertencia"
+            : "Información",
+      });
 
       setNotificacion({
         tipo: "exito",

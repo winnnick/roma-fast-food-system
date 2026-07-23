@@ -2,14 +2,19 @@ import {
   AlertTriangle,
   ArrowRight,
   Banknote,
+  BarChart3,
   Boxes,
+  CalendarRange,
   CircleDollarSign,
   Clock3,
+  CreditCard,
   PackageSearch,
   ReceiptText,
-  RotateCw,
-  ShoppingCart,
-  UserPlus,
+  RefreshCw,
+  ShoppingBag,
+  TrendingDown,
+  UserRoundCheck,
+  UsersRound,
   WalletCards,
 } from "lucide-react";
 
@@ -23,79 +28,651 @@ import {
 import { Link } from "react-router-dom";
 
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  useAuth,
+} from "../../contextos/AuthContext";
+
+import {
+  crearPeriodoRapidoAnalitica,
+  obtenerPanelAdministrativo,
+} from "../../servicios/analiticaServicio";
 
 import DashboardSkeleton from "../../shared/feedback/DashboardSkeleton";
 import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
-import { useAuth } from "../../contextos/AuthContext";
-
-import { obtenerResumenDashboard } from "../../servicios/dashboardServicio";
-
 import type {
-  EstadoPedido,
-  ResumenDashboard,
-} from "../../tipos/dashboard";
+  FiltroPeriodoAnalitica,
+  PanelAdministrativo,
+  PeriodoRapidoAnalitica,
+  ProductoVendidoAnalitica,
+} from "../../tipos/analitica";
 
-function formatearMoneda(valor: number): string {
-  return `Bs. ${valor.toLocaleString("es-BO", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+import ActividadReciente from "./ActividadReciente";
+import FiltrosDashboard from "./FiltrosDashboard";
+import GraficosDashboard from "./GraficosDashboard";
+import PanelAlertas from "./PanelAlertas";
+
+function formatearMoneda(
+  valor: number,
+): string {
+  return `Bs ${new Intl.NumberFormat(
+    "es-BO",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  ).format(valor)}`;
+}
+
+function formatearNumero(
+  valor: number,
+): string {
+  return new Intl.NumberFormat(
+    "es-BO",
+    {
+      maximumFractionDigits: 2,
+    },
+  ).format(valor);
+}
+
+function formatearFecha(
+  fecha: string,
+): string {
+  return new Intl.DateTimeFormat(
+    "es-BO",
+    {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    },
+  ).format(
+    new Date(`${fecha}T12:00:00`),
+  );
+}
+
+function formatearFechaHora(
+  fecha: string,
+): string {
+  return new Intl.DateTimeFormat(
+    "es-BO",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    },
+  ).format(new Date(fecha));
 }
 
 function obtenerSaludo(): string {
-  const horaActual = new Date().getHours();
+  const hora = new Date().getHours();
 
-  if (horaActual < 12) {
+  if (hora < 12) {
     return "Buenos días";
   }
 
-  if (horaActual < 19) {
+  if (hora < 19) {
     return "Buenas tardes";
   }
 
   return "Buenas noches";
 }
 
-function obtenerEstiloEstado(
-  estado: EstadoPedido,
+function obtenerMensajeError(
+  error: unknown,
 ): string {
-  const estilos: Record<EstadoPedido, string> = {
-    Pendiente:
-      "bg-amber-50 text-amber-700 border-amber-200",
+  if (error instanceof Error) {
+    return error.message;
+  }
 
-    Preparando:
-      "bg-blue-50 text-blue-700 border-blue-200",
+  return "No fue posible cargar la información administrativa.";
+}
 
-    Listo:
-      "bg-violet-50 text-violet-700 border-violet-200",
+function porcentajeCobertura(
+  valor: number,
+): string {
+  return `${new Intl.NumberFormat(
+    "es-BO",
+    {
+      maximumFractionDigits: 1,
+    },
+  ).format(valor)}%`;
+}
 
-    Entregado:
-      "bg-emerald-50 text-emerald-700 border-emerald-200",
+function ProductosMasVendidos({
+  productos,
+}: {
+  productos:
+    ProductoVendidoAnalitica[];
+}) {
+  const maximo =
+    Math.max(
+      ...productos.map(
+        (producto) =>
+          producto.cantidadVendida,
+      ),
+      1,
+    );
 
-    Anulado:
-      "bg-red-50 text-red-700 border-red-200",
-  };
+  return (
+    <section
+      className="
+        rounded-3xl border
+        border-slate-200
+        bg-white p-5
+        shadow-panel
+        sm:p-6
+      "
+    >
+      <div
+        className="
+          flex items-start
+          justify-between gap-4
+        "
+      >
+        <div>
+          <div
+            className="
+              flex items-center gap-2
+            "
+          >
+            <ShoppingBag
+              size={20}
+              className="text-roma-700"
+            />
 
-  return estilos[estado];
+            <h2
+              className="
+                text-lg font-black
+                text-slate-900
+              "
+            >
+              Productos más vendidos
+            </h2>
+          </div>
+
+          <p
+            className="
+              mt-1 text-sm
+              text-slate-500
+            "
+          >
+            Unidades e importe estimado
+            del periodo.
+          </p>
+        </div>
+
+        <Link
+          to="/reportes"
+          className="
+            inline-flex items-center
+            gap-1 text-xs
+            font-bold text-roma-700
+            hover:text-roma-800
+          "
+        >
+          Ver reportes
+          <ArrowRight size={14} />
+        </Link>
+      </div>
+
+      {productos.length === 0 ? (
+        <div
+          className="
+            mt-5 rounded-2xl
+            border border-dashed
+            border-slate-300
+            p-8 text-center
+          "
+        >
+          <p
+            className="
+              text-sm text-slate-500
+            "
+          >
+            No existen productos vendidos
+            en el periodo seleccionado.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 space-y-4">
+          {productos
+            .slice(0, 8)
+            .map(
+              (producto, indice) => {
+                const ancho =
+                  Math.max(
+                    8,
+                    (producto
+                      .cantidadVendida /
+                      maximo) *
+                      100,
+                  );
+
+                return (
+                  <article
+                    key={
+                      producto.productoId
+                    }
+                  >
+                    <div
+                      className="
+                        flex items-start
+                        justify-between gap-4
+                      "
+                    >
+                      <div
+                        className="
+                          flex min-w-0
+                          items-center gap-3
+                        "
+                      >
+                        <span
+                          className="
+                            flex h-8 w-8
+                            shrink-0 items-center
+                            justify-center
+                            rounded-lg
+                            bg-slate-100
+                            text-xs font-black
+                            text-slate-600
+                          "
+                        >
+                          {indice + 1}
+                        </span>
+
+                        <div className="min-w-0">
+                          <p
+                            className="
+                              truncate text-sm
+                              font-black
+                              text-slate-900
+                            "
+                          >
+                            {
+                              producto.nombreProducto
+                            }
+                          </p>
+
+                          <p
+                            className="
+                              mt-0.5 text-xs
+                              text-slate-400
+                            "
+                          >
+                            {
+                              producto.codigoProducto
+                            }{" "}
+                            ·{" "}
+                            {
+                              producto.cantidadPedidos
+                            }{" "}
+                            pedidos
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
+                        className="
+                          shrink-0 text-right
+                        "
+                      >
+                        <p
+                          className="
+                            text-sm font-black
+                            text-slate-900
+                          "
+                        >
+                          {formatearNumero(
+                            producto.cantidadVendida,
+                          )}{" "}
+                          uds.
+                        </p>
+
+                        <p
+                          className="
+                            mt-0.5 text-xs
+                            font-bold
+                            text-emerald-700
+                          "
+                        >
+                          {formatearMoneda(
+                            producto.importeNetoEstimado,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                      className="
+                        mt-2 h-2
+                        overflow-hidden
+                        rounded-full
+                        bg-slate-100
+                      "
+                    >
+                      <div
+                        className="
+                          h-full rounded-full
+                          bg-linear-to-r
+                          from-roma-700
+                          to-roma-400
+                        "
+                        style={{
+                          width: `${ancho}%`,
+                        }}
+                      />
+                    </div>
+                  </article>
+                );
+              },
+            )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActividadUsuarios({
+  datos,
+}: {
+  datos:
+    PanelAdministrativo["actividadPorUsuario"];
+}) {
+  return (
+    <section
+      className="
+        overflow-hidden
+        rounded-3xl border
+        border-slate-200
+        bg-white shadow-panel
+      "
+    >
+      <div
+        className="
+          flex items-start
+          justify-between gap-4
+          p-5 sm:p-6
+        "
+      >
+        <div>
+          <div
+            className="
+              flex items-center gap-2
+            "
+          >
+            <UsersRound
+              size={20}
+              className="text-violet-700"
+            />
+
+            <h2
+              className="
+                text-lg font-black
+                text-slate-900
+              "
+            >
+              Resumen por usuario
+            </h2>
+          </div>
+
+          <p
+            className="
+              mt-1 text-sm
+              text-slate-500
+            "
+          >
+            Operaciones atribuidas a cada
+            usuario dentro del periodo.
+          </p>
+        </div>
+      </div>
+
+      {datos.length === 0 ? (
+        <div
+          className="
+            border-t border-slate-100
+            p-8 text-center
+            text-sm text-slate-500
+          "
+        >
+          No existe actividad atribuida a
+          usuarios.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table
+            className="
+              w-full min-w-[900px]
+            "
+          >
+            <thead>
+              <tr className="bg-slate-50">
+                {[
+                  "Usuario",
+                  "Ventas",
+                  "Cobros",
+                  "Inventario",
+                  "Caja",
+                  "Total acciones",
+                ].map(
+                  (encabezado) => (
+                    <th
+                      key={encabezado}
+                      className="
+                        px-5 py-3.5
+                        text-left
+                        text-xs font-bold
+                        uppercase
+                        tracking-wide
+                        text-slate-500
+                      "
+                    >
+                      {encabezado}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+
+            <tbody
+              className="
+                divide-y
+                divide-slate-100
+              "
+            >
+              {datos
+                .slice(0, 10)
+                .map((usuario) => (
+                  <tr
+                    key={`${usuario.usuarioId ?? "sin-id"}-${usuario.usuarioNombre}`}
+                    className="
+                      hover:bg-slate-50
+                    "
+                  >
+                    <td className="px-5 py-4">
+                      <div
+                        className="
+                          flex items-center
+                          gap-3
+                        "
+                      >
+                        <div
+                          className="
+                            flex h-9 w-9
+                            items-center
+                            justify-center
+                            rounded-xl
+                            bg-violet-100
+                            text-violet-700
+                          "
+                        >
+                          <UserRoundCheck
+                            size={18}
+                          />
+                        </div>
+
+                        <div>
+                          <p
+                            className="
+                              text-sm font-black
+                              text-slate-900
+                            "
+                          >
+                            {
+                              usuario.usuarioNombre
+                            }
+                          </p>
+
+                          <p
+                            className="
+                              mt-0.5 text-xs
+                              text-slate-400
+                            "
+                          >
+                            ID{" "}
+                            {usuario.usuarioId ??
+                              "no disponible"}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <p
+                        className="
+                          text-sm font-black
+                          text-slate-900
+                        "
+                      >
+                        {
+                          usuario.ventasRegistradas
+                        }
+                      </p>
+
+                      <p
+                        className="
+                          mt-0.5 text-xs
+                          text-slate-500
+                        "
+                      >
+                        {formatearMoneda(
+                          usuario.montoVentasRegistradas,
+                        )}
+                      </p>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <p
+                        className="
+                          text-sm font-black
+                          text-slate-900
+                        "
+                      >
+                        {
+                          usuario.cobrosRealizados
+                        }
+                      </p>
+
+                      <p
+                        className="
+                          mt-0.5 text-xs
+                          text-slate-500
+                        "
+                      >
+                        {formatearMoneda(
+                          usuario.montoCobrado,
+                        )}
+                      </p>
+                    </td>
+
+                    <td
+                      className="
+                        px-5 py-4
+                        text-sm font-black
+                        text-slate-700
+                      "
+                    >
+                      {
+                        usuario.movimientosInventario
+                      }
+                    </td>
+
+                    <td
+                      className="
+                        px-5 py-4
+                        text-sm font-black
+                        text-slate-700
+                      "
+                    >
+                      {usuario.movimientosCajaManuales +
+                        usuario.aperturasCaja +
+                        usuario.cierresCaja}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span
+                        className="
+                          inline-flex
+                          rounded-full
+                          bg-slate-900
+                          px-3 py-1
+                          text-xs font-black
+                          text-white
+                        "
+                      >
+                        {
+                          usuario.totalAcciones
+                        }
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function Dashboard() {
   const { usuario } = useAuth();
 
-  const [datos, setDatos] =
-    useState<ResumenDashboard | null>(null);
+  const periodoInicial =
+    useMemo(
+      () =>
+        crearPeriodoRapidoAnalitica(
+          "Últimos 7 días",
+        ),
+      [],
+    );
+
+  const [
+    periodoRapido,
+    setPeriodoRapido,
+  ] =
+    useState<PeriodoRapidoAnalitica>(
+      "Últimos 7 días",
+    );
+
+  const [
+    filtroBorrador,
+    setFiltroBorrador,
+  ] =
+    useState<FiltroPeriodoAnalitica>(
+      periodoInicial,
+    );
+
+  const [
+    filtroAplicado,
+    setFiltroAplicado,
+  ] =
+    useState<FiltroPeriodoAnalitica>(
+      periodoInicial,
+    );
+
+  const [panel, setPanel] =
+    useState<PanelAdministrativo | null>(
+      null,
+    );
 
   const [cargando, setCargando] =
     useState(true);
@@ -103,861 +680,1158 @@ function Dashboard() {
   const [error, setError] =
     useState<string | null>(null);
 
-  const coloresMetodosPago = useMemo(
-    () => ["#be123c", "#2563eb"],
-    [],
-  );
+  const cargarPanel =
+    useCallback(
+      async (
+        filtro:
+          FiltroPeriodoAnalitica,
+      ) => {
+        try {
+          setCargando(true);
+          setError(null);
 
-  const cargarDashboard = useCallback(async () => {
-    try {
-      setCargando(true);
-      setError(null);
+          const respuesta =
+            await obtenerPanelAdministrativo(
+              filtro,
+            );
 
-      const respuesta =
-        await obtenerResumenDashboard();
+          setPanel(respuesta);
+          setFiltroAplicado(
+            respuesta.periodo,
+          );
+        } catch (
+          errorCarga: unknown
+        ) {
+          setError(
+            obtenerMensajeError(
+              errorCarga,
+            ),
+          );
+        } finally {
+          setCargando(false);
+        }
+      },
+      [],
+    );
 
-      setDatos(respuesta);
-    } catch {
-      setError(
-        "No fue posible cargar la información del dashboard.",
+  useEffect(() => {
+    let activo = true;
+
+    const temporizador =
+      window.setTimeout(() => {
+        obtenerPanelAdministrativo(
+          periodoInicial,
+        )
+          .then((respuesta) => {
+            if (!activo) {
+              return;
+            }
+
+            setPanel(respuesta);
+            setFiltroAplicado(
+              respuesta.periodo,
+            );
+            setError(null);
+          })
+          .catch(
+            (errorCarga: unknown) => {
+              if (!activo) {
+                return;
+              }
+
+              setError(
+                obtenerMensajeError(
+                  errorCarga,
+                ),
+              );
+            },
+          )
+          .finally(() => {
+            if (activo) {
+              setCargando(false);
+            }
+          });
+      }, 0);
+
+    return () => {
+      activo = false;
+      window.clearTimeout(
+        temporizador,
       );
-    } finally {
-      setCargando(false);
-    }
-  }, []);
+    };
+  }, [periodoInicial]);
 
-useEffect(() => {
-  let componenteActivo = true;
-
-  obtenerResumenDashboard()
-    .then((respuesta) => {
-      if (!componenteActivo) {
-        return;
-      }
-
-      setDatos(respuesta);
-      setError(null);
-    })
-    .catch(() => {
-      if (!componenteActivo) {
-        return;
-      }
-
-      setError(
-        "No fue posible cargar la información del dashboard.",
+  function seleccionarPeriodo(
+    periodo: PeriodoRapidoAnalitica,
+  ) {
+    const nuevoFiltro =
+      crearPeriodoRapidoAnalitica(
+        periodo,
       );
-    })
-    .finally(() => {
-      if (componenteActivo) {
-        setCargando(false);
-      }
-    });
 
-  return () => {
-    componenteActivo = false;
-  };
-}, []);
+    setPeriodoRapido(periodo);
+    setFiltroBorrador(nuevoFiltro);
 
-  if (cargando) {
+    void cargarPanel(
+      nuevoFiltro,
+    );
+  }
+
+  function cambiarFiltro(
+    filtro: FiltroPeriodoAnalitica,
+  ) {
+    setPeriodoRapido(
+      "Personalizado",
+    );
+
+    setFiltroBorrador(filtro);
+  }
+
+  function aplicarFiltro() {
+    void cargarPanel(
+      filtroBorrador,
+    );
+  }
+
+  function actualizarPanel() {
+    void cargarPanel(
+      filtroAplicado,
+    );
+  }
+
+  if (
+    cargando &&
+    panel === null
+  ) {
     return <DashboardSkeleton />;
   }
 
-  if (error || !datos) {
+  if (
+    error &&
+    panel === null
+  ) {
     return (
       <section
         className="
-          flex min-h-96 flex-col items-center
-          justify-center rounded-3xl
+          flex min-h-96
+          flex-col items-center
+          justify-center
+          rounded-3xl
           border border-red-200
-          bg-white p-8 text-center
+          bg-white p-8
+          text-center
           shadow-panel
         "
       >
         <div
           className="
-            flex h-14 w-14 items-center
-            justify-center rounded-2xl
-            bg-red-100 text-red-700
+            flex h-14 w-14
+            items-center
+            justify-center
+            rounded-2xl
+            bg-red-100
+            text-red-700
           "
         >
           <AlertTriangle size={28} />
         </div>
 
-        <h2 className="mt-5 text-xl font-bold text-slate-900">
-          No pudimos cargar el Dashboard
+        <h2
+          className="
+            mt-5 text-xl
+            font-black
+            text-slate-900
+          "
+        >
+          No se pudo cargar el panel
         </h2>
 
-        <p className="mt-2 max-w-md text-sm text-slate-500">
+        <p
+          className="
+            mt-2 max-w-md
+            text-sm text-slate-500
+          "
+        >
           {error}
         </p>
 
         <button
           type="button"
-          onClick={() => void cargarDashboard()}
+          onClick={() =>
+            void cargarPanel(
+              filtroAplicado,
+            )
+          }
           className="
-            mt-6 inline-flex items-center gap-2
-            rounded-xl bg-roma-700
-            px-5 py-3 font-semibold text-white
-            transition-colors hover:bg-roma-800
+            mt-6 inline-flex
+            items-center gap-2
+            rounded-xl
+            bg-roma-700
+            px-5 py-3
+            text-sm font-bold
+            text-white
+            hover:bg-roma-800
           "
         >
-          <RotateCw size={18} />
-
+          <RefreshCw size={18} />
           Volver a intentar
         </button>
       </section>
     );
   }
 
-  const accionesRapidas = [
-    {
-      titulo: "Registrar venta",
-      descripcion: "Crear un nuevo pedido",
-      ruta: "/ventas",
-      icono: ShoppingCart,
-      estilos:
-        "bg-roma-50 text-roma-700 hover:border-roma-200",
-    },
-    {
-      titulo: "Gestionar caja",
-      descripcion: "Consultar la caja actual",
-      ruta: "/caja",
-      icono: WalletCards,
-      estilos:
-        "bg-blue-50 text-blue-700 hover:border-blue-200",
-    },
-    {
-      titulo: "Revisar inventario",
-      descripcion: "Consultar existencias",
-      ruta: "/inventario",
-      icono: PackageSearch,
-      estilos:
-        "bg-amber-50 text-amber-700 hover:border-amber-200",
-    },
-    {
-      titulo: "Nuevo usuario",
-      descripcion: "Registrar personal",
-      ruta: "/usuarios",
-      icono: UserPlus,
-      estilos:
-        "bg-emerald-50 text-emerald-700 hover:border-emerald-200",
-    },
-  ];
+  if (!panel) {
+    return null;
+  }
+
+  const efectivo =
+    panel.metodosPago.reduce(
+      (total, metodo) =>
+        total +
+        metodo.montoEfectivo,
+      0,
+    );
+
+  const qr =
+    panel.metodosPago.reduce(
+      (total, metodo) =>
+        total + metodo.montoQr,
+      0,
+    );
+
+  const totalAlertasStock =
+    panel.inventario
+      .insumosStockBajo +
+    panel.inventario
+      .insumosStockNegativo;
 
   return (
     <div className="space-y-6">
-      {/* Encabezado principal */}
       <section
         className="
-          relative overflow-hidden rounded-3xl
+          relative overflow-hidden
+          rounded-3xl
           bg-linear-to-br
-          from-slate-950 via-slate-900
+          from-slate-950
+          via-slate-900
           to-roma-950
-          p-6 text-white shadow-panel
+          p-6 text-white
+          shadow-panel
           sm:p-8
         "
       >
         <div
           className="
-            absolute -right-20 -top-24
-            h-72 w-72 rounded-full
-            bg-roma-500/20 blur-3xl
+            absolute -right-20
+            -top-24 h-72 w-72
+            rounded-full
+            bg-roma-500/20
+            blur-3xl
           "
         />
 
         <div
           className="
-            absolute -bottom-28 left-1/3
-            h-64 w-64 rounded-full
-            bg-blue-500/10 blur-3xl
+            absolute -bottom-28
+            left-1/3 h-64 w-64
+            rounded-full
+            bg-blue-500/10
+            blur-3xl
           "
         />
 
         <div
           className="
-            relative z-10 flex flex-col
-            gap-7 lg:flex-row
-            lg:items-center lg:justify-between
+            relative z-10
+            flex flex-col gap-7
+            lg:flex-row
+            lg:items-center
+            lg:justify-between
           "
         >
           <div>
-            <p className="text-sm font-semibold text-roma-300">
-              Panel operativo
-            </p>
+            <div
+              className="
+                inline-flex
+                items-center gap-2
+                rounded-full
+                border border-white/15
+                bg-white/10
+                px-3 py-1.5
+                text-xs font-bold
+                text-roma-200
+              "
+            >
+              <BarChart3 size={15} />
+              Panel administrativo
+            </div>
 
-            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+            <h1
+              className="
+                mt-4 text-3xl
+                font-black
+                tracking-tight
+                sm:text-4xl
+              "
+            >
               {obtenerSaludo()},{" "}
-              {usuario?.username || "usuario"}
+              {usuario?.nombreCompleto ??
+                usuario?.username ??
+                "administrador"}
             </h1>
 
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base">
-              Consulta el estado general del restaurante
-              y accede rápidamente a las operaciones
-              principales de la jornada.
+            <p
+              className="
+                mt-3 max-w-3xl
+                text-sm leading-relaxed
+                text-slate-300
+                sm:text-base
+              "
+            >
+              Ventas, caja, inventario y
+              actividad operativa reunidos
+              en una sola vista para tomar
+              decisiones con información
+              real.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                to="/ventas"
+            <div
+              className="
+                mt-5 flex flex-wrap
+                items-center gap-3
+                text-xs font-semibold
+                text-slate-300
+              "
+            >
+              <span
                 className="
-                  inline-flex items-center gap-2
-                  rounded-xl bg-roma-600
-                  px-5 py-3 text-sm
-                  font-bold text-white
-                  shadow-lg shadow-roma-950/30
-                  transition-all
-                  hover:-translate-y-0.5
-                  hover:bg-roma-500
+                  inline-flex items-center
+                  gap-2 rounded-full
+                  bg-white/10
+                  px-3 py-2
                 "
               >
-                <ShoppingCart size={18} />
+                <CalendarRange
+                  size={15}
+                />
 
-                Nueva venta
-              </Link>
+                {formatearFecha(
+                  panel.periodo.fechaDesde,
+                )}{" "}
+                —{" "}
+                {formatearFecha(
+                  panel.periodo.fechaHasta,
+                )}
+              </span>
 
-              <Link
-                to="/caja"
+              <span
                 className="
-                  inline-flex items-center gap-2
-                  rounded-xl border border-white/15
-                  bg-white/10 px-5 py-3
-                  text-sm font-semibold text-white
-                  backdrop-blur-sm transition-colors
-                  hover:bg-white/15
+                  inline-flex items-center
+                  gap-2 rounded-full
+                  bg-white/10
+                  px-3 py-2
                 "
               >
-                <WalletCards size={18} />
-
-                Ver caja
-              </Link>
+                <Clock3 size={15} />
+                Actualizado{" "}
+                {formatearFechaHora(
+                  panel.generadoEn,
+                )}
+              </span>
             </div>
           </div>
 
           <div
             className="
-              min-w-72 rounded-2xl
-              border border-white/10
-              bg-white/8 p-5
-              backdrop-blur-md
+              grid gap-3 sm:grid-cols-2
+              lg:w-[430px]
             "
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Estado de caja
-                </p>
+            <Link
+              to="/ventas"
+              className="
+                inline-flex items-center
+                justify-center gap-2
+                rounded-xl bg-roma-600
+                px-5 py-3
+                text-sm font-bold
+                text-white shadow-lg
+                shadow-roma-950/30
+                transition-all
+                hover:-translate-y-0.5
+                hover:bg-roma-500
+              "
+            >
+              <ReceiptText size={18} />
+              Nueva venta
+            </Link>
 
-                <p className="mt-2 text-xl font-black">
-                  {datos.cajaAbierta
-                    ? "Caja abierta"
-                    : "Caja cerrada"}
-                </p>
-              </div>
+            <Link
+              to="/reportes"
+              className="
+                inline-flex items-center
+                justify-center gap-2
+                rounded-xl
+                border border-white/15
+                bg-white/10
+                px-5 py-3
+                text-sm font-bold
+                text-white
+                transition-colors
+                hover:bg-white/15
+              "
+            >
+              <BarChart3 size={18} />
+              Ver reportes
+            </Link>
 
-              <span
-                className={`
-                  mt-1 h-3 w-3 rounded-full
-                  ${
-                    datos.cajaAbierta
-                      ? "bg-emerald-400 shadow-lg shadow-emerald-400/50"
-                      : "bg-red-400 shadow-lg shadow-red-400/50"
-                  }
-                `}
+            <Link
+              to="/caja"
+              className="
+                inline-flex items-center
+                justify-center gap-2
+                rounded-xl
+                border border-white/15
+                bg-white/10
+                px-5 py-3
+                text-sm font-bold
+                text-white
+                transition-colors
+                hover:bg-white/15
+              "
+            >
+              <WalletCards size={18} />
+              Revisar caja
+            </Link>
+
+            <Link
+              to="/inventario"
+              className="
+                inline-flex items-center
+                justify-center gap-2
+                rounded-xl
+                border border-white/15
+                bg-white/10
+                px-5 py-3
+                text-sm font-bold
+                text-white
+                transition-colors
+                hover:bg-white/15
+              "
+            >
+              <PackageSearch
+                size={18}
               />
-            </div>
-
-            <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">
-                  Apertura
-                </span>
-
-                <span className="font-semibold">
-                  {datos.horaApertura}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">
-                  Saldo registrado
-                </span>
-
-                <span className="font-semibold">
-                  {formatearMoneda(datos.saldoCaja)}
-                </span>
-              </div>
-            </div>
+              Inventario
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Indicadores principales */}
+      <FiltrosDashboard
+        periodoRapido={
+          periodoRapido
+        }
+        filtro={filtroBorrador}
+        cargando={cargando}
+        alSeleccionarPeriodo={
+          seleccionarPeriodo
+        }
+        alCambiarFiltro={
+          cambiarFiltro
+        }
+        alAplicar={aplicarFiltro}
+        alActualizar={
+          actualizarPanel
+        }
+      />
+
+      {error && (
+        <div
+          className="
+            flex items-start gap-3
+            rounded-2xl border
+            border-amber-200
+            bg-amber-50 p-4
+          "
+        >
+          <AlertTriangle
+            size={20}
+            className="
+              mt-0.5 shrink-0
+              text-amber-700
+            "
+          />
+
+          <div>
+            <p
+              className="
+                text-sm font-black
+                text-amber-900
+              "
+            >
+              No se pudo actualizar el
+              periodo
+            </p>
+
+            <p
+              className="
+                mt-1 text-sm
+                text-amber-700
+              "
+            >
+              {error}. Se mantienen los
+              últimos datos cargados.
+            </p>
+          </div>
+        </div>
+      )}
+
       <section
-        aria-label="Indicadores principales"
         className="
-          grid grid-cols-1 gap-5
-          sm:grid-cols-2 xl:grid-cols-4
+          grid gap-5
+          sm:grid-cols-2
+          xl:grid-cols-4
         "
       >
         <TarjetaMetrica
-          titulo="Ventas del día"
-          valor={formatearMoneda(datos.ventasDia)}
-          descripcion="Comparación respecto a la jornada anterior"
+          titulo="Ventas netas"
+          valor={formatearMoneda(
+            panel.comerciales
+              .ventasNetas,
+          )}
+          descripcion="Importe efectivamente cobrado"
           icono={CircleDollarSign}
           tono="roma"
-          variacion={datos.comparacionVentas}
+          variacion={
+            panel.comerciales
+              .variacionVentas
+              .porcentaje
+          }
         />
 
         <TarjetaMetrica
           titulo="Pedidos registrados"
-          valor={String(datos.pedidosDia)}
-          descripcion="Pedidos procesados durante la jornada"
+          valor={String(
+            panel.comerciales
+              .pedidosRegistrados,
+          )}
+          descripcion={`${panel.comerciales.pedidosCobrados} cobrados en el periodo`}
           icono={ReceiptText}
           tono="azul"
-          variacion={datos.comparacionPedidos}
+          variacion={
+            panel.comerciales
+              .variacionPedidos
+              .porcentaje
+          }
         />
 
         <TarjetaMetrica
           titulo="Ticket promedio"
           valor={formatearMoneda(
-            datos.ticketPromedio,
+            panel.comerciales
+              .ticketPromedio,
           )}
-          descripcion="Promedio económico por cada venta"
-          icono={Banknote}
+          descripcion="Promedio por pago cobrado"
+          icono={ShoppingBag}
           tono="verde"
-          variacion={datos.comparacionTicket}
+          variacion={
+            panel.comerciales
+              .variacionTicket
+              .porcentaje
+          }
         />
 
         <TarjetaMetrica
-          titulo="Productos activos"
-          valor={String(datos.productosActivos)}
-          descripcion={`${datos.alertasStock} alertas de inventario pendientes`}
-          icono={Boxes}
+          titulo="Pendiente de cobro"
+          valor={formatearMoneda(
+            panel.comerciales
+              .ventasPendientes,
+          )}
+          descripcion={`${panel.comerciales.pedidosPendientes} pedidos pendientes`}
+          icono={Clock3}
           tono="ambar"
         />
       </section>
 
-      {/* Gráficos */}
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <article
-          className="
-            rounded-2xl border border-slate-200
-            bg-white p-5 shadow-panel
-            sm:p-6 xl:col-span-2
-          "
-        >
-          <div
-            className="
-              flex flex-col gap-4
-              sm:flex-row sm:items-center
-              sm:justify-between
-            "
-          >
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Comportamiento de ventas
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Ingresos registrados durante los últimos
-                siete días
-              </p>
-            </div>
-
-            <div
-              className="
-                inline-flex w-fit items-center
-                gap-2 rounded-xl bg-slate-100
-                px-3 py-2 text-xs
-                font-semibold text-slate-600
-              "
-            >
-              <Clock3 size={15} />
-
-              Últimos 7 días
-            </div>
-          </div>
-
-          <div className="mt-6 h-80 w-full">
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-            >
-              <AreaChart
-                data={datos.ventasSemana}
-                margin={{
-                  top: 10,
-                  right: 10,
-                  left: -15,
-                  bottom: 0,
-                }}
-              >
-                <defs>
-                  <linearGradient
-                    id="rellenoVentas"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="#be123c"
-                      stopOpacity={0.35}
-                    />
-
-                    <stop
-                      offset="95%"
-                      stopColor="#be123c"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-
-                <CartesianGrid
-                  strokeDasharray="4 4"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
-
-                <XAxis
-                  dataKey="dia"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{
-                    fill: "#64748b",
-                    fontSize: 12,
-                  }}
-                />
-
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{
-                    fill: "#64748b",
-                    fontSize: 12,
-                  }}
-                />
-
-                <Tooltip
-                  formatter={(valor) => [
-                    formatearMoneda(Number(valor)),
-                    "Ventas",
-                  ]}
-                  contentStyle={{
-                    borderRadius: "14px",
-                    border: "1px solid #e2e8f0",
-                    boxShadow:
-                      "0 12px 30px -15px rgba(15, 23, 42, 0.35)",
-                  }}
-                />
-
-                <Area
-                  type="monotone"
-                  dataKey="ventas"
-                  stroke="#be123c"
-                  strokeWidth={3}
-                  fill="url(#rellenoVentas)"
-                  activeDot={{
-                    r: 6,
-                    fill: "#be123c",
-                    stroke: "#ffffff",
-                    strokeWidth: 3,
-                  }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </article>
-
-        <article
-          className="
-            rounded-2xl border border-slate-200
-            bg-white p-5 shadow-panel
-            sm:p-6
-          "
-        >
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">
-              Métodos de pago
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Distribución de los cobros del día
-            </p>
-          </div>
-
-          <div className="mt-5 h-56">
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-            >
-              <PieChart>
-                <Pie
-                  data={datos.metodosPago}
-                  dataKey="monto"
-                  nameKey="nombre"
-                  innerRadius={60}
-                  outerRadius={88}
-                  paddingAngle={5}
-                  strokeWidth={0}
-                >
-                  {datos.metodosPago.map(
-                    (metodo, indice) => (
-                      <Cell
-                        key={metodo.nombre}
-                        fill={
-                          coloresMetodosPago[indice]
-                        }
-                      />
-                    ),
-                  )}
-                </Pie>
-
-                <Tooltip
-                  formatter={(valor) => [
-                    formatearMoneda(Number(valor)),
-                    "Monto",
-                  ]}
-                  contentStyle={{
-                    borderRadius: "14px",
-                    border: "1px solid #e2e8f0",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="space-y-3">
-            {datos.metodosPago.map(
-              (metodo, indice) => (
-                <div
-                  key={metodo.nombre}
-                  className="
-                    flex items-center
-                    justify-between rounded-xl
-                    bg-slate-50 px-4 py-3
-                  "
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="h-3 w-3 rounded-full"
-                      style={{
-                        backgroundColor:
-                          coloresMetodosPago[indice],
-                      }}
-                    />
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {metodo.nombre}
-                      </p>
-
-                      <p className="text-xs text-slate-500">
-                        {metodo.porcentaje.toFixed(1)}%
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="text-sm font-bold text-slate-900">
-                    {formatearMoneda(metodo.monto)}
-                  </p>
-                </div>
-              ),
-            )}
-          </div>
-        </article>
-      </section>
-
-      {/* Accesos rápidos */}
       <section
         className="
-          rounded-2xl border border-slate-200
-          bg-white p-5 shadow-panel sm:p-6
+          grid gap-5
+          md:grid-cols-2
+          xl:grid-cols-4
         "
       >
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">
-            Accesos rápidos
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Operaciones utilizadas con mayor frecuencia
-          </p>
-        </div>
-
-        <div
-          className="
-            mt-5 grid grid-cols-1 gap-4
-            sm:grid-cols-2 xl:grid-cols-4
-          "
-        >
-          {accionesRapidas.map((accion) => {
-            const Icono = accion.icono;
-
-            return (
-              <Link
-                key={accion.titulo}
-                to={accion.ruta}
-                className={`
-                  group flex items-center gap-4
-                  rounded-2xl border border-slate-200
-                  p-4 transition-all duration-200
-                  hover:-translate-y-0.5
-                  hover:shadow-md
-                  ${accion.estilos}
-                `}
-              >
-                <div
-                  className="
-                    flex h-11 w-11 shrink-0
-                    items-center justify-center
-                    rounded-xl bg-current/10
-                  "
-                >
-                  <Icono size={21} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">
-                    {accion.titulo}
-                  </p>
-
-                  <p className="mt-1 truncate text-xs opacity-70">
-                    {accion.descripcion}
-                  </p>
-                </div>
-
-                <ArrowRight
-                  size={18}
-                  className="
-                    shrink-0 opacity-50
-                    transition-transform
-                    group-hover:translate-x-1
-                  "
-                />
-              </Link>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Pedidos recientes y stock */}
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <article
           className="
-            overflow-hidden rounded-2xl
-            border border-slate-200
-            bg-white shadow-panel
-            xl:col-span-2
+            rounded-2xl border
+            border-slate-200
+            bg-white p-5
+            shadow-panel
           "
         >
           <div
             className="
-              flex items-center justify-between
-              border-b border-slate-100
-              px-5 py-5 sm:px-6
+              flex items-start
+              justify-between gap-3
             "
           >
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Pedidos recientes
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Últimas operaciones registradas
-              </p>
-            </div>
-
-            <Link
-              to="/ventas"
+            <div
               className="
-                inline-flex items-center gap-1
-                text-sm font-bold text-roma-700
-                hover:text-roma-800
+                flex h-11 w-11
+                items-center
+                justify-center
+                rounded-xl
+                bg-blue-100
+                text-blue-700
               "
             >
-              Ver todos
+              <Banknote size={22} />
+            </div>
 
-              <ArrowRight size={16} />
-            </Link>
+            <span
+              className={`
+                rounded-full
+                px-3 py-1
+                text-xs font-black
+                ${
+                  panel.caja
+                    .cajaAbierta
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-slate-100 text-slate-600"
+                }
+              `}
+            >
+              {panel.caja
+                .cajaAbierta
+                ? "Abierta"
+                : "Cerrada"}
+            </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-170px">
-              <thead>
-                <tr className="bg-slate-50 text-left">
-                  <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Pedido
-                  </th>
+          <p
+            className="
+              mt-4 text-sm font-bold
+              text-slate-500
+            "
+          >
+            Estado de caja
+          </p>
 
-                  <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Hora
-                  </th>
+          <p
+            className="
+              mt-1 text-xl font-black
+              text-slate-900
+            "
+          >
+            {panel.caja.cajaAbierta
+              ? formatearMoneda(
+                  panel.caja
+                    .efectivoEsperado,
+                )
+              : `${panel.caja.sesionesCerradasPeriodo} cierres`}
+          </p>
 
-                  <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Cliente
-                  </th>
-
-                  <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Total
-                  </th>
-
-                  <th className="px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Estado
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {datos.pedidosRecientes.map(
-                  (pedido) => (
-                    <tr
-                      key={pedido.id}
-                      className="
-                        transition-colors
-                        hover:bg-slate-50/70
-                      "
-                    >
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-bold text-slate-900">
-                          {pedido.numero}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {pedido.hora}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {pedido.cliente}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm font-bold text-slate-900">
-                        {formatearMoneda(
-                          pedido.total,
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span
-                          className={`
-                            inline-flex rounded-full
-                            border px-2.5 py-1
-                            text-xs font-bold
-                            ${obtenerEstiloEstado(
-                              pedido.estado,
-                            )}
-                          `}
-                        >
-                          {pedido.estado}
-                        </span>
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
+          <p
+            className="
+              mt-2 text-xs
+              leading-relaxed
+              text-slate-500
+            "
+          >
+            {panel.caja.cajaAbierta
+              ? `Abierta por ${panel.caja.usuarioAperturaNombre ?? "usuario no identificado"}`
+              : `${panel.caja.sesionesConDiferencia} cierres con diferencia`}
+          </p>
         </article>
 
         <article
           className="
-            rounded-2xl border border-slate-200
-            bg-white p-5 shadow-panel sm:p-6
+            rounded-2xl border
+            border-slate-200
+            bg-white p-5
+            shadow-panel
           "
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Alertas de inventario
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Insumos por debajo del mínimo
-              </p>
-            </div>
-
-            <div
-              className="
-                flex h-10 w-10 items-center
-                justify-center rounded-xl
-                bg-amber-100 text-amber-700
-              "
-            >
-              <AlertTriangle size={20} />
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {datos.stockCritico.map((alerta) => {
-              const porcentajeDisponible =
-                Math.min(
-                  100,
-                  (alerta.stockActual /
-                    alerta.stockMinimo) *
-                    100,
-                );
-
-              return (
-                <div
-                  key={alerta.id}
-                  className="
-                    rounded-xl border
-                    border-slate-200 p-4
-                  "
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">
-                        {alerta.insumo}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        Mínimo: {alerta.stockMinimo}{" "}
-                        {alerta.unidad}
-                      </p>
-                    </div>
-
-                    <p className="text-sm font-black text-amber-700">
-                      {alerta.stockActual}{" "}
-                      {alerta.unidad}
-                    </p>
-                  </div>
-
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="
-                        h-full rounded-full
-                        bg-amber-500
-                      "
-                      style={{
-                        width: `${porcentajeDisponible}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <Link
-            to="/inventario"
+          <div
             className="
-              mt-5 flex w-full items-center
-              justify-center gap-2 rounded-xl
-              border border-slate-200
-              px-4 py-3 text-sm font-bold
-              text-slate-700 transition-colors
-              hover:border-amber-200
-              hover:bg-amber-50
-              hover:text-amber-800
+              flex items-start
+              justify-between gap-3
             "
           >
-            Revisar inventario
+            <div
+              className="
+                flex h-11 w-11
+                items-center
+                justify-center
+                rounded-xl
+                bg-emerald-100
+                text-emerald-700
+              "
+            >
+              <CreditCard size={22} />
+            </div>
 
-            <ArrowRight size={17} />
-          </Link>
+            <span
+              className="
+                rounded-full
+                bg-slate-100
+                px-3 py-1
+                text-xs font-black
+                text-slate-600
+              "
+            >
+              Cobros
+            </span>
+          </div>
+
+          <p
+            className="
+              mt-4 text-sm font-bold
+              text-slate-500
+            "
+          >
+            Efectivo / QR
+          </p>
+
+          <p
+            className="
+              mt-1 text-xl font-black
+              text-slate-900
+            "
+          >
+            {formatearMoneda(
+              efectivo,
+            )}
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-500
+            "
+          >
+            QR:{" "}
+            <strong
+              className="
+                text-slate-700
+              "
+            >
+              {formatearMoneda(qr)}
+            </strong>
+          </p>
+        </article>
+
+        <article
+          className="
+            rounded-2xl border
+            border-slate-200
+            bg-white p-5
+            shadow-panel
+          "
+        >
+          <div
+            className="
+              flex items-start
+              justify-between gap-3
+            "
+          >
+            <div
+              className="
+                flex h-11 w-11
+                items-center
+                justify-center
+                rounded-xl
+                bg-amber-100
+                text-amber-700
+              "
+            >
+              <Boxes size={22} />
+            </div>
+
+            <span
+              className={`
+                rounded-full
+                px-3 py-1
+                text-xs font-black
+                ${
+                  totalAlertasStock > 0
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-emerald-50 text-emerald-700"
+                }
+              `}
+            >
+              {totalAlertasStock} alertas
+            </span>
+          </div>
+
+          <p
+            className="
+              mt-4 text-sm font-bold
+              text-slate-500
+            "
+          >
+            Salud del inventario
+          </p>
+
+          <p
+            className="
+              mt-1 text-xl font-black
+              text-slate-900
+            "
+          >
+            {
+              panel.inventario
+                .insumosStockNegativo
+            }{" "}
+            negativos
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-500
+            "
+          >
+            {
+              panel.inventario
+                .insumosStockBajo
+            }{" "}
+            con stock bajo
+          </p>
+        </article>
+
+        <article
+          className="
+            rounded-2xl border
+            border-slate-200
+            bg-white p-5
+            shadow-panel
+          "
+        >
+          <div
+            className="
+              flex items-start
+              justify-between gap-3
+            "
+          >
+            <div
+              className="
+                flex h-11 w-11
+                items-center
+                justify-center
+                rounded-xl
+                bg-violet-100
+                text-violet-700
+              "
+            >
+              <BarChart3 size={22} />
+            </div>
+
+            <span
+              className="
+                rounded-full
+                bg-violet-50
+                px-3 py-1
+                text-xs font-black
+                text-violet-700
+              "
+            >
+              Cobertura
+            </span>
+          </div>
+
+          <p
+            className="
+              mt-4 text-sm font-bold
+              text-slate-500
+            "
+          >
+            Inventario valorado
+          </p>
+
+          <p
+            className="
+              mt-1 text-xl font-black
+              text-slate-900
+            "
+          >
+            {porcentajeCobertura(
+              panel.inventario
+                .coberturaValoracionPorcentaje,
+            )}
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-500
+            "
+          >
+            Consumo valorado:{" "}
+            {formatearMoneda(
+              panel.inventario
+                .costoConsumoValorado,
+            )}
+          </p>
+        </article>
+      </section>
+
+      <div
+        className="
+          grid gap-6
+          xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]
+        "
+      >
+        <PanelAlertas
+          alertas={panel.alertas}
+        />
+
+        <ActividadReciente
+          actividades={
+            panel.actividadReciente
+          }
+        />
+      </div>
+
+      <GraficosDashboard
+        ventasPorDia={
+          panel.ventasPorDia
+        }
+        ventasPorHora={
+          panel.ventasPorHora
+        }
+        metodosPago={
+          panel.metodosPago
+        }
+        actividadPorUsuario={
+          panel.actividadPorUsuario
+        }
+      />
+
+      <div
+        className="
+          grid gap-6
+          xl:grid-cols-[minmax(360px,0.75fr)_minmax(0,1.25fr)]
+        "
+      >
+        <ProductosMasVendidos
+          productos={
+            panel.productosMasVendidos
+          }
+        />
+
+        <ActividadUsuarios
+          datos={
+            panel.actividadPorUsuario
+          }
+        />
+      </div>
+
+      <section
+        className="
+          grid gap-5
+          md:grid-cols-2
+          xl:grid-cols-4
+        "
+      >
+        <article
+          className="
+            rounded-2xl
+            bg-slate-900 p-5
+            text-white
+            shadow-panel
+          "
+        >
+          <TrendingDown
+            size={22}
+            className="text-roma-300"
+          />
+
+          <p
+            className="
+              mt-4 text-xs
+              font-bold uppercase
+              tracking-wide
+              text-slate-400
+            "
+          >
+            Diferencia acumulada
+          </p>
+
+          <p
+            className={`
+              mt-1 text-2xl
+              font-black
+              ${
+                panel.caja
+                  .diferenciaAcumulada <
+                0
+                  ? "text-red-300"
+                  : "text-emerald-300"
+              }
+            `}
+          >
+            {formatearMoneda(
+              panel.caja
+                .diferenciaAcumulada,
+            )}
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-400
+            "
+          >
+            Suma de diferencias de los
+            cierres del periodo.
+          </p>
+        </article>
+
+        <article
+          className="
+            rounded-2xl
+            bg-slate-900 p-5
+            text-white
+            shadow-panel
+          "
+        >
+          <ReceiptText
+            size={22}
+            className="text-amber-300"
+          />
+
+          <p
+            className="
+              mt-4 text-xs
+              font-bold uppercase
+              tracking-wide
+              text-slate-400
+            "
+          >
+            Descuentos
+          </p>
+
+          <p
+            className="
+              mt-1 text-2xl
+              font-black
+              text-amber-300
+            "
+          >
+            {formatearMoneda(
+              panel.comerciales
+                .descuentosOtorgados,
+            )}
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-400
+            "
+          >
+            Total otorgado sobre ventas
+            cobradas.
+          </p>
+        </article>
+
+        <article
+          className="
+            rounded-2xl
+            bg-slate-900 p-5
+            text-white
+            shadow-panel
+          "
+        >
+          <AlertTriangle
+            size={22}
+            className="text-red-300"
+          />
+
+          <p
+            className="
+              mt-4 text-xs
+              font-bold uppercase
+              tracking-wide
+              text-slate-400
+            "
+          >
+            Anulaciones
+          </p>
+
+          <p
+            className="
+              mt-1 text-2xl
+              font-black text-red-300
+            "
+          >
+            {
+              panel.comerciales
+                .pedidosAnulados
+            }{" "}
+            pedidos
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-400
+            "
+          >
+            {
+              panel.comerciales
+                .porcentajeAnulacion
+            }
+            % del movimiento registrado.
+          </p>
+        </article>
+
+        <article
+          className="
+            rounded-2xl
+            bg-slate-900 p-5
+            text-white
+            shadow-panel
+          "
+        >
+          <CircleDollarSign
+            size={22}
+            className="text-blue-300"
+          />
+
+          <p
+            className="
+              mt-4 text-xs
+              font-bold uppercase
+              tracking-wide
+              text-slate-400
+            "
+          >
+            Mermas valoradas
+          </p>
+
+          <p
+            className="
+              mt-1 text-2xl
+              font-black text-blue-300
+            "
+          >
+            {formatearMoneda(
+              panel.inventario
+                .costoMermasValoradas,
+            )}
+          </p>
+
+          <p
+            className="
+              mt-2 text-xs
+              text-slate-400
+            "
+          >
+            Solo considera insumos con
+            valoración económica activa.
+          </p>
         </article>
       </section>
     </div>
