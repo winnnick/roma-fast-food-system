@@ -1,18 +1,24 @@
-
 import {
+  CalendarDays,
   CheckCircle2,
+  Copy,
   CircleDollarSign,
   ClipboardList,
-  ExternalLink,
+  FileDown,
   History,
-  Plus,
+  MapPin,
+  MessageCircle,
+  Printer,
+  ReceiptText,
   RotateCcw,
+  Share2,
   ShoppingCart,
 } from "lucide-react";
 
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -33,12 +39,16 @@ import {
 } from "../../servicios/productoServicio";
 
 import {
+  clienteTieneDatosEntrega,
+  construirTextoEntregaPedido,
+  generarUrlWhatsappEntregaPedido,
   listarClientes,
 } from "../../servicios/clienteServicio";
 
 import {
   cambiarEstadoPreparacion,
   listarVentas,
+  obtenerVentaPorId,
 } from "../../servicios/ventaServicio";
 
 import {
@@ -49,7 +59,8 @@ import {
 } from "../../servicios/ventaInventarioServicio";
 
 import {
-  obtenerCajaAbierta,
+  obtenerCajaAbiertaPorUsuario,
+  obtenerPagoPorVentaId,
   registrarPagoVenta,
 } from "../../servicios/cajaServicio";
 
@@ -74,6 +85,7 @@ import type {
 } from "../../tipos/inventario";
 
 import type {
+  PagoVenta,
   RegistrarPagoVentaDto,
   SesionCaja,
 } from "../../tipos/caja";
@@ -88,15 +100,13 @@ import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
 import AlertaInventarioVenta from "./AlertaInventarioVenta";
 import FormularioAnulacionInventario from "./FormularioAnulacionInventario";
-import FormularioVenta from "./FormularioVenta";
+import FormularioVenta, {
+  type DatosCobroIntegrado,
+} from "./FormularioVenta";
 import FormularioCobro from "./FormularioCobro";
 import HistorialVentas from "./HistorialVentas";
 import PanelPreparacion from "./PanelPreparacion";
 
-type PestanaVentas =
-  | "nueva"
-  | "preparacion"
-  | "historial";
 
 interface AccionEstado {
   venta: Venta;
@@ -105,6 +115,7 @@ interface AccionEstado {
 
 interface VentaPendienteInventario {
   datos: CrearVentaDto;
+  cobro: DatosCobroIntegrado | null;
   evaluacion:
     EvaluacionInventarioVenta;
 }
@@ -117,6 +128,43 @@ function obtenerMensajeError(
   }
 
   return "Ocurrió un error inesperado.";
+}
+
+async function copiarTexto(
+  texto: string,
+): Promise<void> {
+  if (
+    navigator.clipboard &&
+    window.isSecureContext
+  ) {
+    await navigator.clipboard.writeText(
+      texto,
+    );
+
+    return;
+  }
+
+  const area =
+    document.createElement("textarea");
+
+  area.value = texto;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+
+  const copiado =
+    document.execCommand("copy");
+
+  document.body.removeChild(area);
+
+  if (!copiado) {
+    throw new Error(
+      "No se pudo copiar el texto.",
+    );
+  }
 }
 
 function formatearMoneda(
@@ -134,6 +182,132 @@ function formatearMoneda(
   return `Bs ${monto}`;
 }
 
+function formatearFechaHoraTicket(
+  fecha: string,
+): string {
+  return new Intl.DateTimeFormat(
+    "es-BO",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+    },
+  ).format(new Date(fecha));
+}
+
+function escaparHtml(
+  valor: string,
+): string {
+  return valor
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function imprimirTicket(
+  venta: Venta,
+  pago: PagoVenta | null,
+) {
+  const ventana = window.open(
+    "",
+    "_blank",
+    "width=480,height=760",
+  );
+
+  if (!ventana) {
+    return;
+  }
+
+  const filas = venta.detalles
+    .map(
+      (detalle) => `
+        <tr>
+          <td>${detalle.cantidad}× ${escaparHtml(detalle.nombreProducto)}</td>
+          <td style="text-align:right">${formatearMoneda(detalle.subtotal)}</td>
+        </tr>
+        ${
+          detalle.observacion
+            ? `<tr><td colspan="2" class="obs">${escaparHtml(detalle.observacion)}</td></tr>`
+            : ""
+        }
+      `,
+    )
+    .join("");
+
+  const detallePago = pago
+    ? `
+      <p><strong>Método:</strong> ${escaparHtml(pago.metodoPago)}</p>
+      ${pago.montoQr > 0 ? `<p><strong>QR:</strong> ${formatearMoneda(pago.montoQr)}</p>` : ""}
+      ${pago.montoEfectivo > 0 ? `<p><strong>Efectivo aplicado:</strong> ${formatearMoneda(pago.montoEfectivo)}</p>` : ""}
+      ${pago.montoRecibido > 0 ? `<p><strong>Recibido:</strong> ${formatearMoneda(pago.montoRecibido)}</p>` : ""}
+      ${pago.cambio > 0 ? `<p><strong>Cambio:</strong> ${formatearMoneda(pago.cambio)}</p>` : ""}
+    `
+    : `<p><strong>Pago:</strong> ${escaparHtml(venta.estadoCobro)}</p>`;
+
+  ventana.document.write(`
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${escaparHtml(venta.numeroPedido)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #111827; }
+          .ticket { width: 320px; margin: 0 auto; }
+          h1, h2, p { margin: 0; }
+          h1 { text-align: center; font-size: 24px; }
+          h2 { text-align: center; font-size: 13px; letter-spacing: 3px; margin-top: 4px; }
+          .pedido { text-align: center; margin: 18px 0; font-size: 18px; font-weight: 700; }
+          .datos { font-size: 12px; line-height: 1.6; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+          td { padding: 6px 0; border-bottom: 1px dashed #cbd5e1; vertical-align: top; }
+          .obs { color: #64748b; font-size: 11px; padding-top: 0; }
+          .totales { margin-top: 16px; font-size: 12px; line-height: 1.6; }
+          .total { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 18px; font-weight: 800; }
+          .generales { margin-top: 14px; padding: 10px; border: 1px dashed #cbd5e1; font-size: 11px; }
+          .pie { margin-top: 22px; text-align: center; font-size: 11px; color: #475569; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <main class="ticket">
+          <h1>ROMA</h1>
+          <h2>FAST FOOD</h2>
+          <p class="pedido">${escaparHtml(venta.numeroPedido)}</p>
+
+          <div class="datos">
+            <p><strong>Cliente:</strong> ${escaparHtml(venta.clienteNombre)}</p>
+            <p><strong>Atendido por:</strong> ${escaparHtml(venta.usuarioRegistroNombre)}</p>
+            <p><strong>Fecha:</strong> ${escaparHtml(formatearFechaHoraTicket(venta.fechaHoraRegistro))}</p>
+          </div>
+
+          <table>
+            <tbody>${filas}</tbody>
+          </table>
+
+          ${venta.observaciones ? `<div class="generales"><strong>OBSERVACIONES GENERALES PARA COCINA:</strong><br />${escaparHtml(venta.observaciones)}</div>` : ""}
+
+          <div class="totales">
+            <p>Subtotal: ${formatearMoneda(venta.subtotal)}</p>
+            ${venta.montoDescuento > 0 ? `<p>Descuento: - ${formatearMoneda(venta.montoDescuento)}</p>` : ""}
+            <div class="total"><span>TOTAL</span><span>${formatearMoneda(venta.total)}</span></div>
+            <div style="margin-top:10px">${detallePago}</div>
+          </div>
+
+          <p class="pie">Gracias por su compra.<br />Conserve este ticket.</p>
+        </main>
+      </body>
+    </html>
+  `);
+
+  ventana.document.close();
+  ventana.focus();
+
+  window.setTimeout(() => {
+    ventana.print();
+  }, 250);
+}
+
 function Ventas() {
   const { usuario } = useAuth();
 
@@ -148,13 +322,22 @@ function Ventas() {
     ) ?? false;
 
   const [
-    pestanaActiva,
-    setPestanaActiva,
-  ] = useState<PestanaVentas>(
-    puedeGestionar
-      ? "nueva"
-      : "preparacion",
-  );
+    historialAbierto,
+    setHistorialAbierto,
+  ] = useState(false);
+
+  const [
+    ventaParaTicket,
+    setVentaParaTicket,
+  ] = useState<Venta | null>(null);
+
+  const [
+    pagoParaTicket,
+    setPagoParaTicket,
+  ] = useState<PagoVenta | null>(null);
+
+  const [ahora, setAhora] =
+    useState(() => new Date());
 
   const [productos, setProductos] =
     useState<ProductoMenu[]>([]);
@@ -251,6 +434,11 @@ function Ventas() {
   ] = useState<Venta | null>(null);
 
   const [
+    ventaParaCompartirEntrega,
+    setVentaParaCompartirEntrega,
+  ] = useState<Venta | null>(null);
+
+  const [
     cajaAbierta,
     setCajaAbierta,
   ] =
@@ -262,6 +450,59 @@ function Ventas() {
     useCallback(() => {
       setNotificacion(null);
     }, []);
+
+
+  useEffect(() => {
+    const intervalo =
+      window.setInterval(() => {
+        setAhora(new Date());
+      }, 1000);
+
+    return () => {
+      window.clearInterval(
+        intervalo,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    let activo = true;
+
+    const temporizador =
+      window.setTimeout(() => {
+        if (
+          !puedeCobrar ||
+          !usuario
+        ) {
+          if (activo) {
+            setCajaAbierta(null);
+          }
+
+          return;
+        }
+
+        obtenerCajaAbiertaPorUsuario(
+          usuario.id,
+        )
+          .then((caja) => {
+            if (activo) {
+              setCajaAbierta(caja);
+            }
+          })
+          .catch(() => {
+            if (activo) {
+              setCajaAbierta(null);
+            }
+          });
+      }, 0);
+
+    return () => {
+      activo = false;
+      window.clearTimeout(
+        temporizador,
+      );
+    };
+  }, [puedeCobrar, usuario]);
 
   const cargarDatos =
     useCallback(async () => {
@@ -312,6 +553,39 @@ function Ventas() {
 
       setVentas(respuesta);
     }, []);
+
+  const clientesConEntregaIds =
+    useMemo(
+      () =>
+        clientes
+          .filter(
+            clienteTieneDatosEntrega,
+          )
+          .map(
+            (cliente) => cliente.id,
+          ),
+      [clientes],
+    );
+
+  const clienteParaCompartirEntrega =
+    useMemo(() => {
+      if (
+        !ventaParaCompartirEntrega?.clienteId
+      ) {
+        return null;
+      }
+
+      return (
+        clientes.find(
+          (cliente) =>
+            cliente.id ===
+            ventaParaCompartirEntrega.clienteId,
+        ) ?? null
+      );
+    }, [
+      clientes,
+      ventaParaCompartirEntrega,
+    ]);
 
   useEffect(() => {
     let componenteActivo = true;
@@ -402,6 +676,7 @@ function Ventas() {
 
   async function completarRegistroVenta(
     datos: CrearVentaDto,
+    cobro: DatosCobroIntegrado | null,
     autorizaSaldoNegativo: boolean,
   ) {
     if (
@@ -472,32 +747,59 @@ function Ventas() {
       usuario,
     );
 
-    setClaveFormulario(
-      (clave) => clave + 1,
-    );
+    let ventaFinal = venta;
+    let pagoRegistrado:
+      PagoVenta | null = null;
+    let mensajeCobro =
+      "El pedido quedó pendiente de cobro.";
 
-    setVentaPendienteInventario(null);
-    setEvaluacionBloqueada(null);
-
-    await recargarVentas();
-
-    setPestanaActiva(
-      "preparacion",
-    );
-
-    let caja:
-      SesionCaja | null = null;
-
-    if (puedeCobrar) {
+    if (
+      cobro &&
+      puedeCobrar
+    ) {
       try {
-        caja =
-          await obtenerCajaAbierta();
-      } catch {
-        caja = null;
+        pagoRegistrado =
+          await registrarPagoVenta(
+            {
+              ventaId: venta.id,
+              ...cobro,
+            },
+            usuario,
+          );
+
+        await auditarAccion(
+          {
+            modulo: "Caja",
+            accion: "Registrar cobro",
+            entidad: "Pago",
+            entidadId:
+              pagoRegistrado.id,
+            descripcion:
+              `${usuario.nombreCompleto} cobró ${pagoRegistrado.numeroPedido} por ${formatearMoneda(pagoRegistrado.totalCobrado)} mediante ${pagoRegistrado.metodoPago}.`,
+            datosPosteriores:
+              pagoRegistrado,
+            nivel:
+              pagoRegistrado.montoDescuento > 0
+                ? "Advertencia"
+                : "Información",
+          },
+          usuario,
+        );
+
+        ventaFinal =
+          await obtenerVentaPorId(
+            venta.id,
+          );
+
+        mensajeCobro =
+          pagoRegistrado.cambio > 0
+            ? ` Cobro registrado mediante ${pagoRegistrado.metodoPago}. Cambio: ${formatearMoneda(pagoRegistrado.cambio)}.`
+            : ` Cobro registrado mediante ${pagoRegistrado.metodoPago}.`;
+      } catch (errorCobro: unknown) {
+        mensajeCobro =
+          ` El pedido fue registrado, pero el cobro no pudo completarse y quedó pendiente: ${obtenerMensajeError(errorCobro)}`;
       }
     }
-
-    setCajaAbierta(caja);
 
     const insumosBajos =
       evaluacion.proyecciones.filter(
@@ -534,47 +836,44 @@ function Ventas() {
       );
     }
 
-    const complemento =
+    const complementoInventario =
       avisos.length > 0
         ? ` Inventario: ${avisos.join("; ")}.`
         : " El inventario fue actualizado automáticamente.";
 
-    if (
-      puedeCobrar &&
-      caja
-    ) {
-      setVentaParaCobrar(
-        venta,
-      );
+    setClaveFormulario(
+      (clave) => clave + 1,
+    );
 
-      setNotificacion({
-        tipo:
-          insumosNegativos > 0 ||
-          sinReceta > 0
-            ? "info"
-            : "exito",
+    setVentaPendienteInventario(null);
+    setEvaluacionBloqueada(null);
 
-        titulo:
-          "Pedido registrado",
+    await recargarVentas();
 
-        mensaje:
-          `${venta.numeroPedido} fue enviado a preparación.${complemento} Puedes registrar el cobro ahora.`,
-      });
-    } else {
-      setNotificacion({
-        tipo: "info",
+    setPagoParaTicket(
+      pagoRegistrado,
+    );
+    setVentaParaTicket(
+      ventaFinal,
+    );
 
-        titulo:
-          "Pedido registrado",
-
-        mensaje:
-          `${venta.numeroPedido} fue enviado a preparación y quedó pendiente de cobro.${complemento}`,
-      });
-    }
+    setNotificacion({
+      tipo:
+        pagoRegistrado
+          ? "exito"
+          : "info",
+      titulo:
+        pagoRegistrado
+          ? "Pedido y cobro registrados"
+          : "Pedido registrado",
+      mensaje:
+        `${ventaFinal.numeroPedido} fue enviado a preparación.${mensajeCobro}${complementoInventario}`,
+    });
   }
 
   async function guardarVenta(
     datos: CrearVentaDto,
+    cobro: DatosCobroIntegrado | null,
   ) {
     if (
       !usuario ||
@@ -595,7 +894,6 @@ function Ventas() {
         setEvaluacionBloqueada(
           evaluacion,
         );
-
         return;
       }
 
@@ -604,23 +902,22 @@ function Ventas() {
       ) {
         setVentaPendienteInventario({
           datos,
+          cobro,
           evaluacion,
         });
-
         return;
       }
 
       await completarRegistroVenta(
         datos,
+        cobro,
         false,
       );
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
-
         titulo:
           "No se pudo registrar el pedido",
-
         mensaje:
           obtenerMensajeError(error),
       });
@@ -643,15 +940,14 @@ function Ventas() {
 
       await completarRegistroVenta(
         ventaPendienteInventario.datos,
+        ventaPendienteInventario.cobro,
         true,
       );
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
-
         titulo:
           "No se pudo registrar el pedido",
-
         mensaje:
           obtenerMensajeError(error),
       });
@@ -686,11 +982,32 @@ function Ventas() {
     try {
       setProcesandoOperacion(true);
 
-      const venta =
+      let venta: Venta;
+
+      if (
+        accionEstado.venta
+          .estadoPreparacion ===
+          "En preparación" &&
+        accionEstado.nuevoEstado ===
+          "Entregado"
+      ) {
         await cambiarEstadoPreparacion(
           accionEstado.venta.id,
-          accionEstado.nuevoEstado,
+          "Listo",
         );
+
+        venta =
+          await cambiarEstadoPreparacion(
+            accionEstado.venta.id,
+            "Entregado",
+          );
+      } else {
+        venta =
+          await cambiarEstadoPreparacion(
+            accionEstado.venta.id,
+            accionEstado.nuevoEstado,
+          );
+      }
 
       await auditarAccion({
         modulo: "Preparación",
@@ -742,8 +1059,14 @@ function Ventas() {
     try {
       setProcesandoCobro(true);
 
+      if (!usuario) {
+        return;
+      }
+
       const caja =
-        await obtenerCajaAbierta();
+        await obtenerCajaAbiertaPorUsuario(
+          usuario.id,
+        );
 
       if (!caja) {
         setNotificacion({
@@ -753,7 +1076,7 @@ function Ventas() {
             "Caja cerrada",
 
           mensaje:
-            "Abre una caja antes de registrar el cobro.",
+            "Abre tu propia caja antes de registrar el cobro.",
         });
 
         return;
@@ -782,7 +1105,6 @@ function Ventas() {
     }
 
     setVentaParaCobrar(null);
-    setCajaAbierta(null);
   }
 
   async function confirmarCobro(
@@ -835,7 +1157,6 @@ function Ventas() {
       });
 
       setVentaParaCobrar(null);
-      setCajaAbierta(null);
 
       await recargarVentas();
     } catch (error: unknown) {
@@ -1001,6 +1322,101 @@ function Ventas() {
     }
   }
 
+  function abrirCompartirEntrega(
+    venta: Venta,
+  ) {
+    const cliente =
+      venta.clienteId !== null
+        ? clientes.find(
+            (item) =>
+              item.id === venta.clienteId,
+          )
+        : null;
+
+    if (
+      !cliente ||
+      !clienteTieneDatosEntrega(cliente)
+    ) {
+      setNotificacion({
+        tipo: "info",
+        titulo: "Entrega no disponible",
+        mensaje:
+          "Este pedido no tiene un cliente registrado con dirección o ubicación guardada.",
+      });
+
+      return;
+    }
+
+    setVentaParaCompartirEntrega(venta);
+  }
+
+  async function copiarPedidoEntrega() {
+    if (
+      !ventaParaCompartirEntrega ||
+      !clienteParaCompartirEntrega
+    ) {
+      return;
+    }
+
+    try {
+      await copiarTexto(
+        construirTextoEntregaPedido(
+          ventaParaCompartirEntrega,
+          clienteParaCompartirEntrega,
+        ),
+      );
+
+      setNotificacion({
+        tipo: "exito",
+        titulo: "Pedido copiado",
+        mensaje:
+          "Los datos del pedido y la entrega están listos para enviarse al repartidor.",
+      });
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+        titulo: "No se pudo copiar",
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    }
+  }
+
+  function abrirWhatsappPedidoEntrega() {
+    if (
+      !ventaParaCompartirEntrega ||
+      !clienteParaCompartirEntrega
+    ) {
+      return;
+    }
+
+    window.open(
+      generarUrlWhatsappEntregaPedido(
+        ventaParaCompartirEntrega,
+        clienteParaCompartirEntrega,
+      ),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  async function abrirTicket(
+    venta: Venta,
+  ) {
+    try {
+      const pago =
+        await obtenerPagoPorVentaId(
+          venta.id,
+        );
+
+      setPagoParaTicket(pago);
+    } catch {
+      setPagoParaTicket(null);
+    }
+
+    setVentaParaTicket(venta);
+  }
+
   function abrirPantallaPedidos() {
     window.open(
       "/pantalla-pedidos",
@@ -1011,44 +1427,13 @@ function Ventas() {
 
   if (cargandoInicial) {
     return (
-      <div
-        className="
-          space-y-6 animate-pulse
-        "
-      >
-        <div
-          className="
-            h-44 rounded-3xl
-            bg-slate-300
-          "
-        />
+      <div className="space-y-4 animate-pulse">
+        <div className="h-24 rounded-3xl bg-white" />
 
-        <div
-          className="
-            grid gap-5
-            sm:grid-cols-2
-            xl:grid-cols-4
-          "
-        >
-          {Array.from({
-            length: 4,
-          }).map((_, indice) => (
-            <div
-              key={indice}
-              className="
-                h-36 rounded-2xl
-                bg-white
-              "
-            />
-          ))}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.8fr)]">
+          <div className="h-[44rem] rounded-3xl bg-white" />
+          <div className="h-[44rem] rounded-3xl bg-white" />
         </div>
-
-        <div
-          className="
-            h-130
-            rounded-3xl bg-white
-          "
-        />
       </div>
     );
   }
@@ -1117,283 +1502,54 @@ function Ventas() {
       ? `¿Confirmas que ${accionEstado.venta.numeroPedido} ya está listo para recoger?`
       : `¿Confirmas que ${accionEstado?.venta.numeroPedido ?? "el pedido"} ya fue entregado al cliente?`;
 
+  const fechaActual =
+    new Intl.DateTimeFormat(
+      "es-BO",
+      {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      },
+    ).format(ahora);
+
+  const horaActual =
+    new Intl.DateTimeFormat(
+      "es-BO",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      },
+    ).format(ahora);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <NotificacionFlotante
         notificacion={notificacion}
         alCerrar={cerrarNotificacion}
+        modoRapido
+        duracionMs={
+          notificacion?.tipo === "error"
+            ? 2200
+            : 1600
+        }
       />
 
-      <section
-        className="
-          relative overflow-hidden
-          rounded-3xl
-          bg-linear-to-br
-          from-slate-950
-          via-slate-900
-          to-red-950
-          p-6 text-white
-          shadow-panel
-          sm:p-8
-        "
-      >
-        <div
-          className="
-            absolute -right-20
-            -top-20 h-56 w-56
-            rounded-full
-            bg-red-600/20
-            blur-3xl
-          "
-        />
-
-        <div
-          className="
-            relative flex flex-col
-            gap-6 lg:flex-row
-            lg:items-center
-            lg:justify-between
-          "
-        >
-          <div>
-            <div
-              className="
-                inline-flex
-                items-center gap-2
-                rounded-full
-                border border-white/15
-                bg-white/10
-                px-3 py-1.5
-                text-xs font-bold
-                text-red-100
-              "
-            >
-              <ShoppingCart size={15} />
-              Operación comercial
-            </div>
-
-            <h1
-              className="
-                mt-4 text-3xl
-                font-black tracking-tight
-                sm:text-4xl
-              "
-            >
-              Ventas y preparación
-            </h1>
-
-            <p
-              className="
-                mt-3 max-w-3xl
-                text-sm leading-relaxed
-                text-slate-300
-                sm:text-base
-              "
-            >
-              Registra la venta, genera
-              el número de pedido,
-              controla la preparación y
-              realiza el cobro desde una
-              sola operación.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={
-              abrirPantallaPedidos
-            }
-            className="
-              inline-flex items-center
-              justify-center gap-2
-              rounded-xl
-              border border-white/15
-              bg-white/10
-              px-5 py-3
-              text-sm font-bold
-              text-white
-              backdrop-blur
-              hover:bg-white/15
-            "
-          >
-            <ExternalLink size={18} />
-            Abrir pantalla de pedidos
-          </button>
-        </div>
-      </section>
-
-      <section
-        className="
-          grid gap-5
-          sm:grid-cols-2
-          xl:grid-cols-4
-        "
-      >
-        <TarjetaMetrica
-          titulo="En preparación"
-          valor={String(
-            pedidosEnPreparacion,
-          )}
-          descripcion="Pedidos activos en cocina"
-          icono={ClipboardList}
-          tono="ambar"
-        />
-
-        <TarjetaMetrica
-          titulo="Listos"
-          valor={String(
-            pedidosListos,
-          )}
-          descripcion="Esperando ser entregados"
-          icono={CheckCircle2}
-          tono="verde"
-        />
-
-        <TarjetaMetrica
-          titulo="Pendientes de cobro"
-          valor={String(
-            ventasPendientes.length,
-          )}
-          descripcion="Cobros todavía no registrados"
-          icono={CircleDollarSign}
-          tono="azul"
-        />
-
-        <TarjetaMetrica
-          titulo="Monto pendiente"
-          valor={formatearMoneda(
-            totalPendiente,
-          )}
-          descripcion="Total todavía no cobrado"
-          icono={ShoppingCart}
-          tono="roma"
-        />
-      </section>
-
       {!puedeGestionar && (
-        <section
-          className="
-            rounded-2xl border
-            border-blue-200
-            bg-blue-50 p-4
-          "
-        >
-          <p
-            className="
-              text-sm font-bold
-              text-blue-900
-            "
-          >
+        <section className="rounded-2xl border border-blue-200 bg-slate-50 p-4">
+          <p className="text-sm font-bold text-blue-700">
             Modo de consulta
           </p>
-
-          <p
-            className="
-              mt-1 text-sm
-              text-blue-700
-            "
-          >
-            Tu rol permite consultar
-            pedidos y ventas, pero no
-            registrar ni modificar
-            operaciones.
+          <p className="mt-1 text-sm text-slate-600">
+            Tu rol permite consultar pedidos, pero no registrar ni modificar operaciones.
           </p>
         </section>
       )}
 
-      <section
-        className="
-          overflow-hidden
-          rounded-3xl border
-          border-slate-200
-          bg-white shadow-panel
-        "
-      >
-        <div
-          className="
-            flex flex-wrap gap-2
-            border-b border-slate-100
-            bg-slate-50 p-3
-          "
-        >
-          {puedeGestionar && (
-            <button
-              type="button"
-              onClick={() =>
-                setPestanaActiva(
-                  "nueva",
-                )
-              }
-              className={`
-                inline-flex items-center
-                gap-2 rounded-xl
-                px-4 py-2.5
-                text-sm font-bold
-                ${
-                  pestanaActiva ===
-                  "nueva"
-                    ? "bg-red-700 text-white"
-                    : "bg-white text-slate-600 hover:bg-slate-100"
-                }
-              `}
-            >
-              <Plus size={17} />
-              Nueva venta
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() =>
-              setPestanaActiva(
-                "preparacion",
-              )
-            }
-            className={`
-              inline-flex items-center
-              gap-2 rounded-xl
-              px-4 py-2.5
-              text-sm font-bold
-              ${
-                pestanaActiva ===
-                "preparacion"
-                  ? "bg-red-700 text-white"
-                  : "bg-white text-slate-600 hover:bg-slate-100"
-              }
-            `}
-          >
-            <ClipboardList size={17} />
-            Preparación
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setPestanaActiva(
-                "historial",
-              )
-            }
-            className={`
-              inline-flex items-center
-              gap-2 rounded-xl
-              px-4 py-2.5
-              text-sm font-bold
-              ${
-                pestanaActiva ===
-                "historial"
-                  ? "bg-red-700 text-white"
-                  : "bg-white text-slate-600 hover:bg-slate-100"
-              }
-            `}
-          >
-            <History size={17} />
-            Historial
-          </button>
-        </div>
-
-        {pestanaActiva ===
-          "nueva" &&
-          puedeGestionar && (
+      <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.8fr)]">
+        <div className="min-h-[48rem] overflow-visible rounded-3xl border border-slate-200 bg-white shadow-panel">
+          {puedeGestionar ? (
             <FormularioVenta
               key={claveFormulario}
               productos={productos}
@@ -1402,60 +1558,599 @@ function Ventas() {
               cargando={
                 procesandoOperacion
               }
+              puedeCobrar={puedeCobrar}
+              cajaAbierta={cajaAbierta}
               alGuardar={guardarVenta}
               alLimpiar={() => {
                 setClaveFormulario(
                   (clave) => clave + 1,
                 );
               }}
+              alAbrirHistorial={() =>
+                setHistorialAbierto(true)
+              }
             />
+          ) : (
+            <div className="flex min-h-[44rem] items-center justify-center p-8 text-center">
+              <div>
+                <ClipboardList
+                  size={36}
+                  className="mx-auto text-slate-300"
+                />
+                <p className="mt-4 font-black text-slate-800">
+                  Registro no disponible
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setHistorialAbierto(true)
+                  }
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  <History size={17} />
+                  Ver historial
+                </button>
+              </div>
+            </div>
           )}
+        </div>
 
-        {pestanaActiva ===
-          "preparacion" && (
-          <PanelPreparacion
-            ventas={ventas}
-            puedeGestionar={
-              puedeGestionar
-            }
-            puedeCobrar={
-              puedeCobrar
-            }
-            alCambiarEstado={
-              solicitarCambioEstado
-            }
-            alAnular={
-              abrirAnulacion
-            }
-            alCobrar={(venta) =>
-              void solicitarCobro(
-                venta,
-              )
-            }
-          />
-        )}
-
-        {pestanaActiva ===
-          "historial" && (
-          <HistorialVentas
-            ventas={ventas}
-            puedeGestionar={
-              puedeGestionar
-            }
-            puedeCobrar={
-              puedeCobrar
-            }
-            alAnular={
-              abrirAnulacion
-            }
-            alCobrar={(venta) =>
-              void solicitarCobro(
-                venta,
-              )
-            }
-          />
-        )}
+        <PanelPreparacion
+          ventas={ventas}
+          puedeGestionar={
+            puedeGestionar
+          }
+          puedeCobrar={puedeCobrar}
+          alCambiarEstado={
+            solicitarCambioEstado
+          }
+          alAnular={abrirAnulacion}
+          alCobrar={(venta) =>
+            void solicitarCobro(
+              venta,
+            )
+          }
+          clientesConEntregaIds={
+            clientesConEntregaIds
+          }
+          alCompartirEntrega={
+            abrirCompartirEntrega
+          }
+          alAbrirPantallaPedidos={
+            abrirPantallaPedidos
+          }
+        />
       </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <TarjetaMetrica
+          titulo="En preparación"
+          valor={String(
+            pedidosEnPreparacion,
+          )}
+          descripcion="Pedidos activos en cocina."
+          icono={ClipboardList}
+          tono="ambar"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Listos"
+          valor={String(pedidosListos)}
+          descripcion="Esperando entrega al cliente."
+          icono={CheckCircle2}
+          tono="verde"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Pendientes de cobro"
+          valor={String(
+            ventasPendientes.length,
+          )}
+          descripcion="Cobros todavía no registrados."
+          icono={CircleDollarSign}
+          tono="azul"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Monto pendiente"
+          valor={formatearMoneda(
+            totalPendiente,
+          )}
+          descripcion="Total todavía no cobrado."
+          icono={ShoppingCart}
+          tono="roma"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Fecha y hora"
+          valor={horaActual}
+          descripcion={fechaActual}
+          icono={CalendarDays}
+          tono="neutro"
+          variante="compacta"
+        />
+      </section>
+
+      <Modal
+        abierto={historialAbierto}
+        titulo="Historial de ventas"
+        descripcion="Consulta el número, cliente, total y fecha de los pedidos registrados."
+        ancho="grande"
+        alCerrar={() =>
+          setHistorialAbierto(false)
+        }
+      >
+        <HistorialVentas
+          ventas={ventas}
+          alVisualizarTicket={(venta) => {
+            setHistorialAbierto(false);
+            void abrirTicket(venta);
+          }}
+        />
+      </Modal>
+
+      <Modal
+        abierto={
+          ventaParaCompartirEntrega !== null &&
+          clienteParaCompartirEntrega !== null
+        }
+        titulo="Compartir pedido para delivery"
+        descripcion="Incluye el pedido, los datos del cliente y las indicaciones necesarias para la entrega."
+        ancho="grande"
+        alCerrar={() =>
+          setVentaParaCompartirEntrega(null)
+        }
+      >
+        {ventaParaCompartirEntrega &&
+          clienteParaCompartirEntrega && (
+            <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_240px]">
+              <div>
+                <section className="rounded-2xl border border-teal-200 bg-teal-50 p-4 dark:border-teal-900/60 dark:bg-teal-950/35">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white">
+                      <MapPin size={20} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="font-black text-slate-900 dark:text-white">
+                        {ventaParaCompartirEntrega.numeroPedido}
+                        {" · "}
+                        {clienteParaCompartirEntrega.nombreCompleto}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                        {clienteParaCompartirEntrega.telefono ??
+                          "Sin teléfono registrado"}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <pre className="mt-4 max-h-[30rem] overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                  {construirTextoEntregaPedido(
+                    ventaParaCompartirEntrega,
+                    clienteParaCompartirEntrega,
+                  )}
+                </pre>
+              </div>
+
+              <aside className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                    <Share2 size={23} />
+                  </div>
+                  <h3 className="mt-4 text-lg font-black text-slate-900 dark:text-white">
+                    Enviar al repartidor
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                    Copia el mensaje o abre WhatsApp para seleccionar el chat correspondiente.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void copiarPedidoEntrega()
+                    }
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <Copy size={17} />
+                    Copiar pedido
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      abrirWhatsappPedidoEntrega
+                    }
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-700"
+                  >
+                    <MessageCircle size={17} />
+                    Abrir WhatsApp
+                  </button>
+                </div>
+              </aside>
+            </div>
+          )}
+      </Modal>
+
+      <Modal
+        abierto={
+          ventaParaTicket !== null
+        }
+        titulo={
+          ventaParaTicket
+            ? `Ticket ${ventaParaTicket.numeroPedido}`
+            : "Visualizar ticket"
+        }
+        descripcion="Vista resumida del comprobante asociado al pedido."
+        ancho="grande"
+        alCerrar={() => {
+          setVentaParaTicket(null);
+          setPagoParaTicket(null);
+        }}
+      >
+        {ventaParaTicket && (
+          <div
+            className="
+              grid gap-6 p-5
+              lg:grid-cols-[minmax(320px,420px)_minmax(220px,1fr)]
+              lg:p-6
+            "
+          >
+            <section
+              className="
+                mx-auto w-full max-w-sm
+                rounded-2xl border
+                border-slate-300
+                bg-[#ffffff] p-6
+                text-[#0f172a]
+                shadow-panel
+              "
+            >
+              <div className="text-center">
+                <p
+                  className="
+                    text-3xl font-black
+                    tracking-[-0.06em]
+                  "
+                >
+                  ROMA
+                </p>
+
+                <p
+                  className="
+                    mt-1 text-[10px]
+                    font-black uppercase
+                    tracking-[0.35em]
+                    text-[#be123c]
+                  "
+                >
+                  FAST FOOD
+                </p>
+
+                <p
+                  className="
+                    mt-5 text-lg font-black
+                  "
+                >
+                  {ventaParaTicket.numeroPedido}
+                </p>
+              </div>
+
+              <div
+                className="
+                  mt-5 space-y-1
+                  border-y border-dashed
+                  border-slate-300 py-4
+                  text-xs
+                "
+              >
+                <p>
+                  <strong>Cliente:</strong>{" "}
+                  {ventaParaTicket.clienteNombre}
+                </p>
+
+                <p>
+                  <strong>Atendido por:</strong>{" "}
+                  {ventaParaTicket.usuarioRegistroNombre}
+                </p>
+
+                <p>
+                  <strong>Fecha:</strong>{" "}
+                  {formatearFechaHoraTicket(
+                    ventaParaTicket.fechaHoraRegistro,
+                  )}
+                </p>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {ventaParaTicket.detalles.map(
+                  (detalle) => (
+                    <div
+                      key={detalle.productoId}
+                      className="
+                        border-b border-dashed
+                        border-slate-200 pb-3
+                      "
+                    >
+                      <div
+                        className="
+                          flex items-start
+                          justify-between gap-3
+                          text-xs
+                        "
+                      >
+                        <p className="font-bold">
+                          {detalle.cantidad}×{" "}
+                          {detalle.nombreProducto}
+                        </p>
+
+                        <p className="shrink-0 font-black">
+                          {formatearMoneda(
+                            detalle.subtotal,
+                          )}
+                        </p>
+                      </div>
+
+                      {detalle.observacion && (
+                        <p
+                          className="
+                            mt-1 text-[11px]
+                            italic text-slate-500
+                          "
+                        >
+                          {detalle.observacion}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+
+              {ventaParaTicket.observaciones && (
+                <div
+                  className="
+                    mt-4 rounded-xl border-2
+                    border-dashed border-amber-400
+                    bg-amber-50 p-3
+                  "
+                >
+                  <p
+                    className="
+                      text-[10px] font-black
+                      uppercase tracking-wide
+                      text-amber-800
+                    "
+                  >
+                    Observaciones generales para cocina
+                  </p>
+
+                  <p
+                    className="
+                      mt-1 whitespace-pre-wrap
+                      text-xs font-bold
+                      leading-relaxed
+                      text-slate-800
+                    "
+                  >
+                    {ventaParaTicket.observaciones}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-5 space-y-1 text-xs">
+                <div className="flex justify-between gap-3">
+                  <span>Subtotal</span>
+                  <strong>
+                    {formatearMoneda(
+                      ventaParaTicket.subtotal,
+                    )}
+                  </strong>
+                </div>
+
+                {ventaParaTicket.montoDescuento > 0 && (
+                  <div className="flex justify-between gap-3">
+                    <span>Descuento</span>
+                    <strong>
+                      -{" "}
+                      {formatearMoneda(
+                        ventaParaTicket.montoDescuento,
+                      )}
+                    </strong>
+                  </div>
+                )}
+
+                <div
+                  className="
+                    mt-3 flex justify-between
+                    gap-3 border-t
+                    border-slate-300 pt-3
+                    text-lg font-black
+                  "
+                >
+                  <span>Total</span>
+                  <span>
+                    {formatearMoneda(
+                      ventaParaTicket.total,
+                    )}
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-1 border-t border-dashed border-slate-300 pt-3 text-slate-600">
+                  <p>
+                    <strong>Pago:</strong>{" "}
+                    {pagoParaTicket?.metodoPago ??
+                      ventaParaTicket.estadoCobro}
+                  </p>
+
+                  {pagoParaTicket && (
+                    <>
+                      {pagoParaTicket.montoQr > 0 && (
+                        <p>
+                          QR: {formatearMoneda(
+                            pagoParaTicket.montoQr,
+                          )}
+                        </p>
+                      )}
+
+                      {pagoParaTicket.montoEfectivo > 0 && (
+                        <p>
+                          Efectivo aplicado:{" "}
+                          {formatearMoneda(
+                            pagoParaTicket.montoEfectivo,
+                          )}
+                        </p>
+                      )}
+
+                      {pagoParaTicket.montoRecibido > 0 && (
+                        <p>
+                          Recibido: {formatearMoneda(
+                            pagoParaTicket.montoRecibido,
+                          )}
+                        </p>
+                      )}
+
+                      {pagoParaTicket.cambio > 0 && (
+                        <p className="font-black text-emerald-700">
+                          Cambio: {formatearMoneda(
+                            pagoParaTicket.cambio,
+                          )}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <p
+                className="
+                  mt-6 text-center
+                  text-[11px]
+                  text-slate-500
+                "
+              >
+                Gracias por su compra.
+              </p>
+            </section>
+
+            <aside
+              className="
+                flex flex-col
+                justify-between gap-4
+                rounded-2xl border
+                border-slate-200
+                bg-slate-50 p-5
+              "
+            >
+              <div>
+                <div
+                  className="
+                    flex h-12 w-12
+                    items-center justify-center
+                    rounded-2xl bg-roma-50
+                    text-roma-700
+                  "
+                >
+                  <ReceiptText size={24} />
+                </div>
+
+                <h3
+                  className="
+                    mt-4 text-lg font-black
+                    text-slate-900
+                  "
+                >
+                  Copia del comprobante
+                </h3>
+
+                <p
+                  className="
+                    mt-2 text-sm
+                    leading-relaxed
+                    text-slate-500
+                  "
+                >
+                  Imprime el comprobante o utiliza la opción Guardar como PDF del navegador.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    imprimirTicket(
+                      ventaParaTicket,
+                      pagoParaTicket,
+                    )
+                  }
+                  className="
+                    inline-flex h-11 w-full
+                    items-center justify-center
+                    gap-2 rounded-xl
+                    bg-roma-700 px-4
+                    text-sm font-bold
+                    text-white
+                    transition-colors
+                    hover:bg-roma-800
+                  "
+                >
+                  <Printer size={17} />
+                  Imprimir ticket
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    imprimirTicket(
+                      ventaParaTicket,
+                      pagoParaTicket,
+                    )
+                  }
+                  className="
+                    inline-flex h-11 w-full
+                    items-center justify-center
+                    gap-2 rounded-xl
+                    border border-slate-300
+                    bg-white px-4
+                    text-sm font-bold
+                    text-slate-700
+                    transition-colors
+                    hover:bg-slate-100
+                  "
+                  title="En el cuadro de impresión selecciona Guardar como PDF"
+                >
+                  <FileDown size={17} />
+                  Guardar como PDF
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVentaParaTicket(null);
+                    setPagoParaTicket(null);
+                  }}
+                  className="
+                    h-11 w-full rounded-xl
+                    border border-slate-300
+                    bg-white px-4
+                    text-sm font-bold
+                    text-slate-700
+                    transition-colors
+                    hover:bg-slate-100
+                  "
+                >
+                  Cerrar
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         abierto={Boolean(
@@ -1467,7 +2162,7 @@ function Ventas() {
             ? `Cobrar ${ventaParaCobrar.numeroPedido}`
             : "Registrar cobro"
         }
-        descripcion="Selecciona el descuento, método de pago y monto entregado por el cliente."
+        descripcion="Ingresa el monto QR y el efectivo recibido. El método de pago se detectará automáticamente."
         ancho="grande"
         alCerrar={cerrarCobro}
       >
@@ -1479,12 +2174,8 @@ function Ventas() {
               cargando={
                 procesandoCobro
               }
-              alCobrar={
-                confirmarCobro
-              }
-              alCancelar={
-                cerrarCobro
-              }
+              alCobrar={confirmarCobro}
+              alCancelar={cerrarCobro}
             />
           )}
       </Modal>
@@ -1610,6 +2301,7 @@ function Ventas() {
       </Modal>
     </div>
   );
+
 }
 
 export default Ventas;

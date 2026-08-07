@@ -1,3 +1,7 @@
+import type {
+  UsuarioSesion,
+} from "../tipos/auth";
+
 import {
   listarClientes,
 } from "./clienteServicio";
@@ -11,6 +15,7 @@ import type {
   DetalleVenta,
   EstadoPreparacion,
   RegistrarCobroVentaDto,
+  TipoClienteVenta,
   Venta,
 } from "../tipos/venta";
 
@@ -44,6 +49,67 @@ function clonarDetalle(
   };
 }
 
+function esTipoClienteVenta(
+  valor: unknown,
+): valor is TipoClienteVenta {
+  return (
+    valor ===
+      "Consumidor final" ||
+    valor === "Registrado" ||
+    valor === "Ocasional"
+  );
+}
+
+function inferirTipoClienteVenta(
+  venta: Venta,
+): TipoClienteVenta {
+  if (
+    esTipoClienteVenta(
+      venta.tipoCliente,
+    )
+  ) {
+    return venta.tipoCliente;
+  }
+
+  if (venta.clienteId !== null) {
+    return "Registrado";
+  }
+
+  const nombre =
+    venta.clienteNombre
+      ?.trim() ?? "";
+
+  if (
+    nombre &&
+    nombre.toLocaleLowerCase(
+      "es",
+    ) !== "consumidor final"
+  ) {
+    return "Ocasional";
+  }
+
+  return "Consumidor final";
+}
+
+function normalizarNombreClienteVenta(
+  venta: Venta,
+  tipoCliente: TipoClienteVenta,
+): string {
+  if (
+    tipoCliente ===
+    "Consumidor final"
+  ) {
+    return "Consumidor final";
+  }
+
+  const nombre =
+    venta.clienteNombre
+      ?.trim() ?? "";
+
+  return nombre ||
+    "Cliente sin nombre";
+}
+
 function normalizarVenta(
   venta: Venta,
 ): Venta {
@@ -69,8 +135,40 @@ function normalizarVenta(
             montoDescuento,
         );
 
+  const tipoCliente =
+    inferirTipoClienteVenta(
+      venta,
+    );
+
   return {
     ...venta,
+
+    tipoCliente,
+
+    clienteNombre:
+      normalizarNombreClienteVenta(
+        venta,
+        tipoCliente,
+      ),
+
+    usuarioRegistroId:
+      Number.isInteger(
+        venta.usuarioRegistroId,
+      )
+        ? venta.usuarioRegistroId
+        : null,
+
+    usuarioRegistroNombre:
+      venta.usuarioRegistroNombre
+        ?.trim() ||
+      "No registrado",
+
+    sesionCajaIdRegistro:
+      Number.isInteger(
+        venta.sesionCajaIdRegistro,
+      )
+        ? venta.sesionCajaIdRegistro
+        : null,
 
     subtotal,
 
@@ -208,47 +306,94 @@ function normalizarTextoOpcional(
 }
 
 async function resolverCliente(
-  clienteId: number | null,
+  datos: CrearVentaDto,
 ): Promise<{
+  tipoCliente: TipoClienteVenta;
   clienteId: number | null;
   clienteNombre: string;
 }> {
-  if (clienteId === null) {
+  if (datos.clienteId !== null) {
+    const clientes =
+      await listarClientes();
+
+    const cliente =
+      clientes.find(
+        (clienteActual) =>
+          clienteActual.id ===
+          datos.clienteId,
+      );
+
+    if (!cliente) {
+      throw new Error(
+        "El cliente seleccionado no existe.",
+      );
+    }
+
+    if (cliente.archivado) {
+      throw new Error(
+        "El cliente seleccionado está archivado.",
+      );
+    }
+
     return {
-      clienteId: null,
+      tipoCliente: "Registrado",
+      clienteId: cliente.id,
       clienteNombre:
-        "Consumidor final",
+        cliente.nombreCompleto,
     };
   }
 
-  const clientes =
-    await listarClientes();
-
-  const cliente =
-    clientes.find(
-      (clienteActual) =>
-        clienteActual.id ===
-        clienteId,
-    );
-
-  if (!cliente) {
+  if (
+    datos.tipoCliente ===
+    "Registrado"
+  ) {
     throw new Error(
-      "El cliente seleccionado no existe.",
+      "Selecciona un cliente registrado válido.",
     );
   }
 
-  if (
-    cliente.estado !== "Activo"
-  ) {
-    throw new Error(
-      "El cliente seleccionado está inactivo.",
+  const nombreEscrito =
+    datos.clienteNombre
+      ?.trim() ?? "";
+
+  const solicitaClienteOcasional =
+    datos.tipoCliente ===
+      "Ocasional" ||
+    (
+      !datos.tipoCliente &&
+      nombreEscrito.length > 0 &&
+      nombreEscrito
+        .toLocaleLowerCase("es") !==
+        "consumidor final"
     );
+
+  if (solicitaClienteOcasional) {
+    if (nombreEscrito.length < 2) {
+      throw new Error(
+        "El nombre del cliente ocasional debe contener al menos 2 caracteres.",
+      );
+    }
+
+    if (nombreEscrito.length > 100) {
+      throw new Error(
+        "El nombre del cliente ocasional no puede superar los 100 caracteres.",
+      );
+    }
+
+    return {
+      tipoCliente: "Ocasional",
+      clienteId: null,
+      clienteNombre:
+        nombreEscrito,
+    };
   }
 
   return {
-    clienteId: cliente.id,
+    tipoCliente:
+      "Consumidor final",
+    clienteId: null,
     clienteNombre:
-      cliente.nombreCompleto,
+      "Consumidor final",
   };
 }
 
@@ -367,6 +512,7 @@ async function construirDetalles(
 async function validarVenta(
   datos: CrearVentaDto,
 ): Promise<{
+  tipoCliente: TipoClienteVenta;
   clienteId: number | null;
   clienteNombre: string;
   detalles: DetalleVenta[];
@@ -377,9 +523,7 @@ async function validarVenta(
     cliente,
     detalles,
   ] = await Promise.all([
-    resolverCliente(
-      datos.clienteId,
-    ),
+    resolverCliente(datos),
 
     construirDetalles(datos),
   ]);
@@ -449,8 +593,21 @@ export async function obtenerVentaPorId(
 
 export async function crearVenta(
   datos: CrearVentaDto,
+  usuario: UsuarioSesion,
+  sesionCajaId: number,
 ): Promise<Venta> {
   await esperar(600);
+
+  if (
+    !Number.isInteger(
+      sesionCajaId,
+    ) ||
+    sesionCajaId <= 0
+  ) {
+    throw new Error(
+      "La sesión de caja de la venta no es válida.",
+    );
+  }
 
   const ventas =
     obtenerVentasPersistidas();
@@ -470,11 +627,23 @@ export async function crearVenta(
     numeroPedido:
       generarNumeroPedido(id),
 
+    tipoCliente:
+      datosValidados.tipoCliente,
+
     clienteId:
       datosValidados.clienteId,
 
     clienteNombre:
       datosValidados.clienteNombre,
+
+    usuarioRegistroId:
+      usuario.id,
+
+    usuarioRegistroNombre:
+      usuario.nombreCompleto,
+
+    sesionCajaIdRegistro:
+      sesionCajaId,
 
     detalles:
       datosValidados.detalles,

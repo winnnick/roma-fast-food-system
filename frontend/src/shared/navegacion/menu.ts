@@ -33,6 +33,12 @@ export interface PaginaActual
   seccion: string;
 }
 
+export interface AtajoNavegacion {
+  codigo: string;
+  ruta: string;
+  permiso: PermisoSistema;
+}
+
 export const seccionesMenu: SeccionMenu[] = [
   {
     titulo: "Principal",
@@ -63,12 +69,12 @@ export const seccionesMenu: SeccionMenu[] = [
       },
 
       {
-        nombre: "Clientes",
-        ruta: "/clientes",
+        nombre: "Caja",
+        ruta: "/caja",
         descripcion:
-          "Registro y consulta de clientes",
-        icono: UserRound,
-        permiso: "VENTAS_VER",
+          "Apertura, movimientos y cierre",
+        icono: Wallet,
+        permiso: "CAJA_VER",
       },
 
       {
@@ -81,12 +87,12 @@ export const seccionesMenu: SeccionMenu[] = [
       },
 
       {
-        nombre: "Caja",
-        ruta: "/caja",
+        nombre: "Clientes",
+        ruta: "/clientes",
         descripcion:
-          "Apertura, movimientos y cierre",
-        icono: Wallet,
-        permiso: "CAJA_VER",
+          "Registro y consulta de clientes",
+        icono: UserRound,
+        permiso: "VENTAS_VER",
       },
 
       {
@@ -133,6 +139,21 @@ export const seccionesMenu: SeccionMenu[] = [
     ],
   },
 ];
+
+export const atajosNavegacion:
+  AtajoNavegacion[] = [
+    {
+      codigo: "KeyD",
+      ruta: "/dashboard",
+      permiso: "DASHBOARD_VER",
+    },
+
+    {
+      codigo: "KeyV",
+      ruta: "/ventas",
+      permiso: "VENTAS_VER",
+    },
+  ];
 
 const paginas: PaginaActual[] =
   seccionesMenu.flatMap((seccion) =>

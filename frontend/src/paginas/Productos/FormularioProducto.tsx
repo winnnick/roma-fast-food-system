@@ -1,33 +1,68 @@
 import {
-  BadgeDollarSign,
+  Boxes,
+  ChefHat,
   Image,
   LoaderCircle,
-  PackageCheck,
+  PackageOpen,
+  Plus,
   Save,
   Sparkles,
+  Tags,
+  Trash2,
   X,
 } from "lucide-react";
 
 import {
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
 
 import type {
+  InsumoInventario,
+  RecetaProducto,
+} from "../../tipos/inventario";
+
+import type {
   CategoriaProducto,
-  CrearProductoDto,
+  ControlInventarioProducto,
+  IngredienteProductoDto,
   ProductoMenu,
 } from "../../tipos/producto";
+
+export interface DatosFormularioProductoIntegrado {
+  codigo: string;
+  nombre: string;
+  descripcion: string;
+  categoriaId: number;
+  precio: number;
+  destacado: boolean;
+  controlInventario:
+    ControlInventarioProducto;
+  imagenUrl: string | null;
+  ingredientes:
+    IngredienteProductoDto[] | null;
+}
 
 interface FormularioProductoProps {
   producto: ProductoMenu | null;
   categorias: CategoriaProducto[];
+  insumos: InsumoInventario[];
+  recetaVigente: RecetaProducto | null;
   cargando: boolean;
   alGuardar: (
-    datos: CrearProductoDto,
+    datos:
+      DatosFormularioProductoIntegrado,
   ) => Promise<void>;
   alCancelar: () => void;
+  alGestionarCategorias: () => void;
+}
+
+interface FilaIngrediente {
+  clave: number;
+  insumoId: string;
+  cantidad: string;
 }
 
 interface EstadoFormularioProducto {
@@ -36,40 +71,20 @@ interface EstadoFormularioProducto {
   descripcion: string;
   categoriaId: string;
   precio: string;
-  disponible: boolean;
   destacado: boolean;
+  controlInventario:
+    ControlInventarioProducto;
   imagenUrl: string;
 }
 
-interface ErroresFormularioProducto {
+interface ErroresProducto {
   codigo?: string;
   nombre?: string;
   descripcion?: string;
   categoriaId?: string;
   precio?: string;
   imagenUrl?: string;
-}
-
-function obtenerEstadoInicial(
-  producto: ProductoMenu | null,
-): EstadoFormularioProducto {
-  return {
-    codigo: producto?.codigo ?? "",
-    nombre: producto?.nombre ?? "",
-    descripcion:
-      producto?.descripcion ?? "",
-    categoriaId:
-      producto?.categoriaId.toString() ??
-      "",
-    precio:
-      producto?.precio.toString() ?? "",
-    disponible:
-      producto?.disponible ?? true,
-    destacado:
-      producto?.destacado ?? false,
-    imagenUrl:
-      producto?.imagenUrl ?? "",
-  };
+  receta?: string;
 }
 
 function esUrlValida(
@@ -91,39 +106,162 @@ function esUrlValida(
   }
 }
 
+function obtenerFilasIniciales(
+  receta: RecetaProducto | null,
+): FilaIngrediente[] {
+  if (
+    !receta ||
+    receta.ingredientes.length === 0
+  ) {
+    return [
+      {
+        clave: 1,
+        insumoId: "",
+        cantidad: "",
+      },
+    ];
+  }
+
+  return receta.ingredientes.map(
+    (ingrediente, indice) => ({
+      clave: indice + 1,
+      insumoId:
+        ingrediente.insumoId.toString(),
+      cantidad:
+        ingrediente.cantidadPorProducto.toString(),
+    }),
+  );
+}
+
+function normalizarIngredientes(
+  ingredientes: IngredienteProductoDto[],
+): IngredienteProductoDto[] {
+  return [...ingredientes]
+    .map((ingrediente) => ({
+      insumoId: ingrediente.insumoId,
+      cantidadPorProducto: Number(
+        ingrediente.cantidadPorProducto.toFixed(
+          6,
+        ),
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        a.insumoId - b.insumoId,
+    );
+}
+
+function recetasIguales(
+  ingredientesA: IngredienteProductoDto[],
+  ingredientesB: IngredienteProductoDto[],
+): boolean {
+  return (
+    JSON.stringify(
+      normalizarIngredientes(
+        ingredientesA,
+      ),
+    ) ===
+    JSON.stringify(
+      normalizarIngredientes(
+        ingredientesB,
+      ),
+    )
+  );
+}
+
 function FormularioProducto({
   producto,
   categorias,
+  insumos,
+  recetaVigente,
   cargando,
   alGuardar,
   alCancelar,
+  alGestionarCategorias,
 }: FormularioProductoProps) {
   const [formulario, setFormulario] =
     useState<EstadoFormularioProducto>(
+      () => ({
+        codigo: producto?.codigo ?? "",
+        nombre: producto?.nombre ?? "",
+        descripcion:
+          producto?.descripcion ?? "",
+        categoriaId:
+          producto?.categoriaId.toString() ??
+          "",
+        precio:
+          producto?.precio.toString() ??
+          "",
+        destacado:
+          producto?.destacado ?? false,
+        controlInventario:
+          producto?.controlInventario ??
+          "Con receta",
+        imagenUrl:
+          producto?.imagenUrl ?? "",
+      }),
+    );
+
+  const [filasIngredientes, setFilasIngredientes] =
+    useState<FilaIngrediente[]>(
       () =>
-        obtenerEstadoInicial(producto),
+        obtenerFilasIniciales(
+          recetaVigente,
+        ),
+    );
+
+  const siguienteClaveIngrediente =
+    useRef(
+      (recetaVigente?.ingredientes.length ?? 0) + 2,
     );
 
   const [errores, setErrores] =
-    useState<ErroresFormularioProducto>(
-      {},
-    );
-
-  const productoInactivo =
-    producto?.estado === "Inactivo";
+    useState<ErroresProducto>({});
 
   const categoriasDisponibles =
+    useMemo(
+      () =>
+        categorias.filter(
+          (categoria) =>
+            categoria.estado === "Activo" ||
+            categoria.id ===
+              producto?.categoriaId,
+        ),
+      [
+        categorias,
+        producto?.categoriaId,
+      ],
+    );
+
+  const insumosDisponibles =
     useMemo(() => {
-      return categorias.filter(
-        (categoria) =>
-          categoria.estado === "Activo" ||
-          categoria.id ===
-            producto?.categoriaId,
+      const idsActuales = new Set(
+        recetaVigente?.ingredientes.map(
+          (ingrediente) =>
+            ingrediente.insumoId,
+        ) ?? [],
       );
-    }, [
-      categorias,
-      producto?.categoriaId,
-    ]);
+
+      return insumos.filter(
+        (insumo) =>
+          insumo.estado === "Activo" ||
+          idsActuales.has(insumo.id),
+      );
+    }, [insumos, recetaVigente]);
+
+  const ingredientesIniciales =
+    useMemo<IngredienteProductoDto[]>(
+      () =>
+        recetaVigente?.ingredientes.map(
+          (ingrediente) => ({
+            insumoId:
+              ingrediente.insumoId,
+            cantidadPorProducto:
+              ingrediente.cantidadPorProducto,
+          }),
+        ) ?? [],
+      [recetaVigente],
+    );
 
   function actualizarCampo<
     Campo extends keyof EstadoFormularioProducto,
@@ -132,36 +270,213 @@ function FormularioProducto({
     valor:
       EstadoFormularioProducto[Campo],
   ) {
-    setFormulario(
-      (formularioActual) => ({
-        ...formularioActual,
-        [campo]: valor,
-      }),
+    setFormulario((actual) => ({
+      ...actual,
+      [campo]: valor,
+    }));
+
+    setErrores((actuales) => ({
+      ...actuales,
+      [campo]: undefined,
+    }));
+  }
+
+  function agregarIngrediente() {
+    setFilasIngredientes(
+      (actuales) => [
+        ...actuales,
+        {
+          clave:
+            siguienteClaveIngrediente.current++,
+          insumoId: "",
+          cantidad: "",
+        },
+      ],
+    );
+
+    setErrores((actuales) => ({
+      ...actuales,
+      receta: undefined,
+    }));
+  }
+
+  function actualizarIngrediente(
+    clave: number,
+    campo: "insumoId" | "cantidad",
+    valor: string,
+  ) {
+    setFilasIngredientes(
+      (actuales) =>
+        actuales.map((fila) =>
+          fila.clave === clave
+            ? {
+                ...fila,
+                [campo]: valor,
+              }
+            : fila,
+        ),
+    );
+
+    setErrores((actuales) => ({
+      ...actuales,
+      receta: undefined,
+    }));
+  }
+
+  function eliminarIngrediente(
+    clave: number,
+  ) {
+    setFilasIngredientes(
+      (actuales) => {
+        const restantes =
+          actuales.filter(
+            (fila) =>
+              fila.clave !== clave,
+          );
+
+        return restantes.length > 0
+          ? restantes
+          : [
+              {
+                clave:
+                  siguienteClaveIngrediente.current++,
+                insumoId: "",
+                cantidad: "",
+              },
+            ];
+      },
+    );
+  }
+
+  function construirIngredientes(): {
+    valor: IngredienteProductoDto[] | null;
+    valido: boolean;
+  } {
+    if (
+      formulario.controlInventario ===
+      "No controla inventario"
+    ) {
+      return {
+        valor: [],
+        valido: true,
+      };
+    }
+
+    const ingredientes:
+      IngredienteProductoDto[] = [];
+
+    for (const fila of filasIngredientes) {
+      const insumoId = Number(
+        fila.insumoId,
+      );
+
+      const cantidad = Number(
+        fila.cantidad,
+      );
+
+      if (
+        !fila.insumoId ||
+        !fila.cantidad.trim()
+      ) {
+        setErrores((actuales) => ({
+          ...actuales,
+          receta:
+            "Completa el insumo y la cantidad de cada fila.",
+        }));
+
+        return {
+          valor: null,
+          valido: false,
+        };
+      }
+
+      if (
+        !Number.isInteger(insumoId) ||
+        insumoId <= 0 ||
+        !Number.isFinite(cantidad) ||
+        cantidad <= 0
+      ) {
+        setErrores((actuales) => ({
+          ...actuales,
+          receta:
+            "Las cantidades de la receta deben ser mayores que cero.",
+        }));
+
+        return {
+          valor: null,
+          valido: false,
+        };
+      }
+
+      ingredientes.push({
+        insumoId,
+        cantidadPorProducto:
+          cantidad,
+      });
+    }
+
+    const ids = ingredientes.map(
+      (ingrediente) =>
+        ingrediente.insumoId,
     );
 
     if (
-      campo in errores &&
-      errores[
-        campo as keyof ErroresFormularioProducto
-      ]
+      new Set(ids).size !== ids.length
     ) {
-      setErrores(
-        (erroresActuales) => ({
-          ...erroresActuales,
-          [campo]: undefined,
-        }),
-      );
+      setErrores((actuales) => ({
+        ...actuales,
+        receta:
+          "Un mismo insumo no puede repetirse en la receta.",
+      }));
+
+      return {
+        valor: null,
+        valido: false,
+      };
     }
+
+    if (ingredientes.length === 0) {
+      setErrores((actuales) => ({
+        ...actuales,
+        receta:
+          "Agrega al menos un insumo o selecciona ‘No controla inventario’.",
+      }));
+
+      return {
+        valor: null,
+        valido: false,
+      };
+    }
+
+    if (
+      producto &&
+      recetaVigente &&
+      producto.controlInventario ===
+        "Con receta" &&
+      recetasIguales(
+        ingredientes,
+        ingredientesIniciales,
+      )
+    ) {
+      return {
+        valor: null,
+        valido: true,
+      };
+    }
+
+    return {
+      valor: ingredientes,
+      valido: true,
+    };
   }
 
   function validarFormulario(): boolean {
     const nuevosErrores:
-      ErroresFormularioProducto = {};
+      ErroresProducto = {};
 
-    const codigo =
-      formulario.codigo
-        .trim()
-        .toUpperCase();
+    const codigo = formulario.codigo
+      .trim()
+      .toUpperCase();
 
     const nombre =
       formulario.nombre.trim();
@@ -169,8 +484,9 @@ function FormularioProducto({
     const descripcion =
       formulario.descripcion.trim();
 
-    const precio =
-      Number(formulario.precio);
+    const precio = Number(
+      formulario.precio,
+    );
 
     if (!codigo) {
       nuevosErrores.codigo =
@@ -180,18 +496,15 @@ function FormularioProducto({
       codigo.length > 20
     ) {
       nuevosErrores.codigo =
-        "El código debe contener entre 3 y 20 caracteres.";
+        "Debe contener entre 3 y 20 caracteres.";
     } else if (
       !/^[A-Z0-9-]+$/.test(codigo)
     ) {
       nuevosErrores.codigo =
-        "Utilice solamente letras, números y guiones.";
+        "Usa letras, números y guiones.";
     }
 
-    if (!nombre) {
-      nuevosErrores.nombre =
-        "El nombre es obligatorio.";
-    } else if (nombre.length < 3) {
+    if (nombre.length < 3) {
       nuevosErrores.nombre =
         "El nombre debe contener al menos 3 caracteres.";
     } else if (nombre.length > 100) {
@@ -199,12 +512,7 @@ function FormularioProducto({
         "El nombre no puede superar los 100 caracteres.";
     }
 
-    if (!descripcion) {
-      nuevosErrores.descripcion =
-        "La descripción es obligatoria.";
-    } else if (
-      descripcion.length < 5
-    ) {
+    if (descripcion.length < 5) {
       nuevosErrores.descripcion =
         "La descripción debe contener al menos 5 caracteres.";
     } else if (
@@ -216,13 +524,10 @@ function FormularioProducto({
 
     if (!formulario.categoriaId) {
       nuevosErrores.categoriaId =
-        "Seleccione una categoría.";
+        "Selecciona una categoría.";
     }
 
-    if (!formulario.precio.trim()) {
-      nuevosErrores.precio =
-        "El precio es obligatorio.";
-    } else if (
+    if (
       !Number.isFinite(precio) ||
       precio <= 0
     ) {
@@ -239,7 +544,7 @@ function FormularioProducto({
       )
     ) {
       nuevosErrores.imagenUrl =
-        "Ingrese una dirección web válida.";
+        "Ingresa una dirección web válida.";
     }
 
     setErrores(nuevosErrores);
@@ -259,11 +564,20 @@ function FormularioProducto({
       return;
     }
 
+    const resultadoIngredientes =
+      construirIngredientes();
+
+    if (!resultadoIngredientes.valido) {
+      return;
+    }
+
+    const ingredientes =
+      resultadoIngredientes.valor;
+
     await alGuardar({
-      codigo:
-        formulario.codigo
-          .trim()
-          .toUpperCase(),
+      codigo: formulario.codigo
+        .trim()
+        .toUpperCase(),
       nombre:
         formulario.nombre.trim(),
       descripcion:
@@ -274,45 +588,48 @@ function FormularioProducto({
       precio: Number(
         formulario.precio,
       ),
-      disponible:
-        productoInactivo
-          ? false
-          : formulario.disponible,
       destacado:
-        productoInactivo
-          ? false
-          : formulario.destacado,
+        formulario.destacado,
+      controlInventario:
+        formulario.controlInventario,
       imagenUrl:
         formulario.imagenUrl.trim() ||
         null,
+      ingredientes,
     });
   }
+
+  const controlConReceta =
+    formulario.controlInventario ===
+    "Con receta";
 
   return (
     <form
       onSubmit={manejarEnvio}
       noValidate
     >
-      <div
-        className="
-          grid gap-6 p-5
-          sm:p-6 lg:grid-cols-2
-        "
-      >
-        <div className="space-y-5">
-          <div
-            className="
-              grid gap-4
-              sm:grid-cols-2
-            "
-          >
+      <div className="grid gap-4 p-5 sm:p-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,.75fr)]">
+        <section className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300">
+              <Boxes size={20} />
+            </div>
+
+            <div>
+              <h3 className="font-black text-slate-900 dark:text-white">
+                Información comercial
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Datos que verá el cajero al registrar una venta.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label
                 htmlFor="codigo-producto"
-                className="
-                  text-sm font-bold
-                  text-slate-700
-                "
+                className="text-sm font-black text-slate-700 dark:text-slate-200"
               >
                 Código interno
               </label>
@@ -321,53 +638,24 @@ function FormularioProducto({
                 id="codigo-producto"
                 type="text"
                 value={formulario.codigo}
-                disabled={cargando}
                 maxLength={20}
-                autoComplete="off"
+                disabled={cargando}
                 placeholder="Ej.: HAMB-001"
                 onChange={(evento) =>
                   actualizarCampo(
                     "codigo",
-                    evento.target.value
-                      .toUpperCase(),
+                    evento.target.value,
                   )
                 }
-                className={`
-                  mt-2 w-full
-                  rounded-xl border
-                  bg-white px-4 py-3
-                  text-sm font-semibold
-                  uppercase text-slate-900
-                  outline-none transition
-                  placeholder:font-normal
-                  placeholder:normal-case
-                  placeholder:text-slate-400
-                  disabled:cursor-not-allowed
-                  disabled:bg-slate-100
-                  ${
-                    errores.codigo
-                      ? `
-                        border-red-400
-                        ring-4 ring-red-100
-                      `
-                      : `
-                        border-slate-300
-                        focus:border-red-600
-                        focus:ring-4
-                        focus:ring-red-100
-                      `
-                  }
-                `}
+                className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm font-bold uppercase text-slate-900 outline-none transition placeholder:normal-case placeholder:font-normal placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-600 ${
+                  errores.codigo
+                    ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                    : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+                }`}
               />
 
               {errores.codigo && (
-                <p
-                  className="
-                    mt-1 text-xs
-                    font-semibold
-                    text-red-600
-                  "
-                >
+                <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
                   {errores.codigo}
                 </p>
               )}
@@ -376,89 +664,41 @@ function FormularioProducto({
             <div>
               <label
                 htmlFor="precio-producto"
-                className="
-                  text-sm font-bold
-                  text-slate-700
-                "
+                className="text-sm font-black text-slate-700 dark:text-slate-200"
               >
                 Precio de venta
               </label>
 
               <div className="relative mt-2">
-                <BadgeDollarSign
-                  size={19}
-                  className="
-                    pointer-events-none
-                    absolute left-4
-                    top-1/2
-                    -translate-y-1/2
-                    text-slate-400
-                  "
-                />
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
+                  Bs
+                </span>
 
                 <input
                   id="precio-producto"
                   type="number"
+                  inputMode="decimal"
+                  min="0.01"
+                  step="0.01"
                   value={formulario.precio}
                   disabled={cargando}
-                  min="0.01"
-                  max="100000"
-                  step="0.01"
-                  placeholder="0.00"
+                  placeholder="0,00"
                   onChange={(evento) =>
                     actualizarCampo(
                       "precio",
                       evento.target.value,
                     )
                   }
-                  className={`
-                    w-full rounded-xl
-                    border bg-white
-                    py-3 pl-11 pr-14
-                    text-sm font-bold
-                    text-slate-900
-                    outline-none transition
-                    placeholder:text-slate-400
-                    disabled:cursor-not-allowed
-                    disabled:bg-slate-100
-                    ${
-                      errores.precio
-                        ? `
-                          border-red-400
-                          ring-4 ring-red-100
-                        `
-                        : `
-                          border-slate-300
-                          focus:border-red-600
-                          focus:ring-4
-                          focus:ring-red-100
-                        `
-                    }
-                  `}
+                  className={`w-full rounded-xl border bg-white py-3 pl-11 pr-4 text-sm font-black text-slate-900 outline-none transition placeholder:font-normal placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-600 ${
+                    errores.precio
+                      ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                      : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+                  }`}
                 />
-
-                <span
-                  className="
-                    pointer-events-none
-                    absolute right-4
-                    top-1/2
-                    -translate-y-1/2
-                    text-xs font-bold
-                    text-slate-500
-                  "
-                >
-                  Bs
-                </span>
               </div>
 
               {errores.precio && (
-                <p
-                  className="
-                    mt-1 text-xs
-                    font-semibold
-                    text-red-600
-                  "
-                >
+                <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
                   {errores.precio}
                 </p>
               )}
@@ -468,10 +708,7 @@ function FormularioProducto({
           <div>
             <label
               htmlFor="nombre-producto"
-              className="
-                text-sm font-bold
-                text-slate-700
-              "
+              className="text-sm font-black text-slate-700 dark:text-slate-200"
             >
               Nombre del producto
             </label>
@@ -480,9 +717,8 @@ function FormularioProducto({
               id="nombre-producto"
               type="text"
               value={formulario.nombre}
-              disabled={cargando}
               maxLength={100}
-              autoComplete="off"
+              disabled={cargando}
               placeholder="Ej.: Hamburguesa clásica"
               onChange={(evento) =>
                 actualizarCampo(
@@ -490,78 +726,43 @@ function FormularioProducto({
                   evento.target.value,
                 )
               }
-              className={`
-                mt-2 w-full
-                rounded-xl border
-                bg-white px-4 py-3
-                text-sm text-slate-900
-                outline-none transition
-                placeholder:text-slate-400
-                disabled:cursor-not-allowed
-                disabled:bg-slate-100
-                ${
-                  errores.nombre
-                    ? `
-                      border-red-400
-                      ring-4 ring-red-100
-                    `
-                    : `
-                      border-slate-300
-                      focus:border-red-600
-                      focus:ring-4
-                      focus:ring-red-100
-                    `
-                }
-              `}
+              className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-600 ${
+                errores.nombre
+                  ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                  : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+              }`}
             />
 
-            <div
-              className="
-                mt-1 flex items-start
-                justify-between gap-3
-              "
-            >
-              <div>
-                {errores.nombre && (
-                  <p
-                    className="
-                      text-xs font-semibold
-                      text-red-600
-                    "
-                  >
-                    {errores.nombre}
-                  </p>
-                )}
-              </div>
-
-              <span
-                className="
-                  shrink-0 text-xs
-                  text-slate-400
-                "
-              >
-                {formulario.nombre.length}
-                /100
-              </span>
-            </div>
+            {errores.nombre && (
+              <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
+                {errores.nombre}
+              </p>
+            )}
           </div>
 
           <div>
-            <label
-              htmlFor="categoria-producto"
-              className="
-                text-sm font-bold
-                text-slate-700
-              "
-            >
-              Categoría
-            </label>
+            <div className="flex items-end justify-between gap-3">
+              <label
+                htmlFor="categoria-producto"
+                className="text-sm font-black text-slate-700 dark:text-slate-200"
+              >
+                Categoría
+              </label>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={alGestionarCategorias}
+                className="inline-flex items-center gap-1.5 text-xs font-black text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+              >
+                <Tags size={14} />
+                Gestionar categorías
+              </button>
+            </div>
 
             <select
               id="categoria-producto"
-              value={
-                formulario.categoriaId
-              }
+              value={formulario.categoriaId}
               disabled={cargando}
               onChange={(evento) =>
                 actualizarCampo(
@@ -569,32 +770,14 @@ function FormularioProducto({
                   evento.target.value,
                 )
               }
-              className={`
-                mt-2 w-full
-                rounded-xl border
-                bg-white px-4 py-3
-                text-sm font-semibold
-                text-slate-700
-                outline-none transition
-                disabled:cursor-not-allowed
-                disabled:bg-slate-100
-                ${
-                  errores.categoriaId
-                    ? `
-                      border-red-400
-                      ring-4 ring-red-100
-                    `
-                    : `
-                      border-slate-300
-                      focus:border-red-600
-                      focus:ring-4
-                      focus:ring-red-100
-                    `
-                }
-              `}
+              className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm font-bold text-slate-700 outline-none transition dark:bg-slate-950 dark:text-slate-200 ${
+                errores.categoriaId
+                  ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                  : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+              }`}
             >
               <option value="">
-                Seleccione una categoría
+                Selecciona una categoría
               </option>
 
               {categoriasDisponibles.map(
@@ -614,496 +797,372 @@ function FormularioProducto({
             </select>
 
             {errores.categoriaId && (
-              <p
-                className="
-                  mt-1 text-xs
-                  font-semibold
-                  text-red-600
-                "
-              >
+              <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
                 {errores.categoriaId}
               </p>
             )}
           </div>
 
           <div>
-            <label
-              htmlFor="descripcion-producto"
-              className="
-                text-sm font-bold
-                text-slate-700
-              "
-            >
-              Descripción
-            </label>
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="descripcion-producto"
+                className="text-sm font-black text-slate-700 dark:text-slate-200"
+              >
+                Descripción
+              </label>
+
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {formulario.descripcion.length}/300
+              </span>
+            </div>
 
             <textarea
               id="descripcion-producto"
-              value={
-                formulario.descripcion
-              }
-              disabled={cargando}
+              value={formulario.descripcion}
+              rows={3}
               maxLength={300}
-              rows={5}
-              placeholder="Describe los ingredientes o características principales del producto."
+              disabled={cargando}
+              placeholder="Características principales del producto."
               onChange={(evento) =>
                 actualizarCampo(
                   "descripcion",
                   evento.target.value,
                 )
               }
-              className={`
-                mt-2 w-full resize-none
-                rounded-xl border
-                bg-white px-4 py-3
-                text-sm leading-relaxed
-                text-slate-900
-                outline-none transition
-                placeholder:text-slate-400
-                disabled:cursor-not-allowed
-                disabled:bg-slate-100
-                ${
-                  errores.descripcion
-                    ? `
-                      border-red-400
-                      ring-4 ring-red-100
-                    `
-                    : `
-                      border-slate-300
-                      focus:border-red-600
-                      focus:ring-4
-                      focus:ring-red-100
-                    `
-                }
-              `}
+              className={`mt-2 w-full resize-none rounded-xl border bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 outline-none transition placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-600 ${
+                errores.descripcion
+                  ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                  : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+              }`}
             />
 
-            <div
-              className="
-                mt-1 flex items-start
-                justify-between gap-3
-              "
-            >
-              <div>
-                {errores.descripcion && (
-                  <p
-                    className="
-                      text-xs font-semibold
-                      text-red-600
-                    "
-                  >
-                    {
-                      errores.descripcion
-                    }
-                  </p>
-                )}
-              </div>
+            {errores.descripcion && (
+              <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
+                {errores.descripcion}
+              </p>
+            )}
+          </div>
+        </section>
 
-              <span
-                className="
-                  shrink-0 text-xs
-                  text-slate-400
-                "
-              >
-                {
-                  formulario.descripcion
-                    .length
-                }
-                /300
-              </span>
+        <section className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+              <Image size={20} />
+            </div>
+
+            <div>
+              <h3 className="font-black text-slate-900 dark:text-white">
+                Presentación
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Imagen y prioridad dentro del menú.
+              </p>
             </div>
           </div>
-        </div>
 
-        <div className="space-y-5">
           <div>
             <label
               htmlFor="imagen-producto"
-              className="
-                text-sm font-bold
-                text-slate-700
-              "
+              className="text-sm font-black text-slate-700 dark:text-slate-200"
             >
-              Imagen mediante URL
-              <span
-                className="
-                  ml-2 font-normal
-                  text-slate-400
-                "
-              >
+              URL de la imagen
+              <span className="ml-2 font-normal text-slate-400">
                 Opcional
               </span>
             </label>
 
-            <div className="relative mt-2">
-              <Image
-                size={19}
-                className="
-                  pointer-events-none
-                  absolute left-4 top-3.5
-                  text-slate-400
-                "
-              />
-
-              <input
-                id="imagen-producto"
-                type="url"
-                value={
-                  formulario.imagenUrl
-                }
-                disabled={cargando}
-                placeholder="https://ejemplo.com/producto.jpg"
-                onChange={(evento) =>
-                  actualizarCampo(
-                    "imagenUrl",
-                    evento.target.value,
-                  )
-                }
-                className={`
-                  w-full rounded-xl
-                  border bg-white
-                  py-3 pl-11 pr-4
-                  text-sm text-slate-900
-                  outline-none transition
-                  placeholder:text-slate-400
-                  disabled:cursor-not-allowed
-                  disabled:bg-slate-100
-                  ${
-                    errores.imagenUrl
-                      ? `
-                        border-red-400
-                        ring-4 ring-red-100
-                      `
-                      : `
-                        border-slate-300
-                        focus:border-red-600
-                        focus:ring-4
-                        focus:ring-red-100
-                      `
-                  }
-                `}
-              />
-            </div>
+            <input
+              id="imagen-producto"
+              type="url"
+              value={formulario.imagenUrl}
+              disabled={cargando}
+              placeholder="https://..."
+              onChange={(evento) =>
+                actualizarCampo(
+                  "imagenUrl",
+                  evento.target.value,
+                )
+              }
+              className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-600 ${
+                errores.imagenUrl
+                  ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                  : "border-slate-300 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:focus:ring-red-950/50"
+              }`}
+            />
 
             {errores.imagenUrl && (
-              <p
-                className="
-                  mt-1 text-xs
-                  font-semibold
-                  text-red-600
-                "
-              >
+              <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
                 {errores.imagenUrl}
               </p>
             )}
           </div>
 
-          <div
-            className="
-              flex min-h-52
-              items-center justify-center
-              overflow-hidden
-              rounded-2xl
-              border border-dashed
-              border-slate-300
-              bg-slate-50
-            "
-          >
+          <div className="flex h-36 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/60">
             {formulario.imagenUrl.trim() &&
             esUrlValida(
               formulario.imagenUrl,
             ) ? (
               <img
-                src={
-                  formulario.imagenUrl
-                }
+                src={formulario.imagenUrl}
                 alt="Vista previa del producto"
-                className="
-                  h-52 w-full
-                  object-cover
-                "
+                className="h-full w-full object-cover"
                 onError={(evento) => {
                   evento.currentTarget.style.display =
                     "none";
                 }}
               />
             ) : (
-              <div
-                className="
-                  px-6 py-10
-                  text-center
-                "
-              >
+              <div className="text-center">
                 <Image
-                  size={36}
-                  className="
-                    mx-auto text-slate-300
-                  "
+                  size={30}
+                  className="mx-auto text-slate-300 dark:text-slate-700"
                 />
-
-                <p
-                  className="
-                    mt-3 text-sm
-                    font-bold
-                    text-slate-600
-                  "
-                >
+                <p className="mt-2 text-xs font-bold text-slate-400 dark:text-slate-500">
                   Vista previa
-                </p>
-
-                <p
-                  className="
-                    mt-1 text-xs
-                    leading-relaxed
-                    text-slate-400
-                  "
-                >
-                  La carga real de archivos
-                  se implementará cuando se
-                  conecte el backend.
                 </p>
               </div>
             )}
           </div>
 
-          <div className="space-y-3">
-            <label
-              className={`
-                flex items-start gap-4
-                rounded-2xl border
-                p-4 transition-colors
-                ${
-                  productoInactivo
-                    ? `
-                      cursor-not-allowed
-                      border-slate-200
-                      bg-slate-100
-                      opacity-60
-                    `
-                    : `
-                      cursor-pointer
-                      border-emerald-200
-                      bg-emerald-50
-                      hover:bg-emerald-100
-                    `
-                }
-              `}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  formulario.disponible
-                }
-                disabled={
-                  cargando ||
-                  productoInactivo
-                }
-                onChange={(evento) =>
-                  actualizarCampo(
-                    "disponible",
-                    evento.target.checked,
-                  )
-                }
-                className="
-                  mt-1 h-4 w-4
-                  accent-emerald-600
-                "
-              />
-
-              <PackageCheck
-                size={22}
-                className="
-                  shrink-0 text-emerald-700
-                "
-              />
-
-              <span>
-                <span
-                  className="
-                    block text-sm
-                    font-bold
-                    text-slate-800
-                  "
-                >
-                  Disponible para pedidos
-                </span>
-
-                <span
-                  className="
-                    mt-1 block text-xs
-                    leading-relaxed
-                    text-slate-500
-                  "
-                >
-                  Permite seleccionar el
-                  producto durante el
-                  registro de pedidos.
-                </span>
-              </span>
-            </label>
-
-            <label
-              className={`
-                flex items-start gap-4
-                rounded-2xl border
-                p-4 transition-colors
-                ${
-                  productoInactivo
-                    ? `
-                      cursor-not-allowed
-                      border-slate-200
-                      bg-slate-100
-                      opacity-60
-                    `
-                    : `
-                      cursor-pointer
-                      border-amber-200
-                      bg-amber-50
-                      hover:bg-amber-100
-                    `
-                }
-              `}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  formulario.destacado
-                }
-                disabled={
-                  cargando ||
-                  productoInactivo
-                }
-                onChange={(evento) =>
-                  actualizarCampo(
-                    "destacado",
-                    evento.target.checked,
-                  )
-                }
-                className="
-                  mt-1 h-4 w-4
-                  accent-amber-500
-                "
-              />
-
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800/70">
+            <div className="flex items-center gap-3">
               <Sparkles
-                size={22}
-                className="
-                  shrink-0 text-amber-700
-                "
+                size={20}
+                className="text-amber-500"
               />
 
-              <span>
-                <span
-                  className="
-                    block text-sm
-                    font-bold
-                    text-slate-800
-                  "
-                >
+              <div>
+                <p className="text-sm font-black text-slate-900 dark:text-white">
                   Producto destacado
-                </span>
-
-                <span
-                  className="
-                    mt-1 block text-xs
-                    leading-relaxed
-                    text-slate-500
-                  "
-                >
-                  Aparecerá de forma
-                  prioritaria en futuras
-                  pantallas de pedidos.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          {productoInactivo && (
-            <div
-              className="
-                rounded-2xl
-                border border-amber-200
-                bg-amber-50 p-4
-              "
-            >
-              <p
-                className="
-                  text-sm font-bold
-                  text-amber-800
-                "
-              >
-                Producto inactivo
-              </p>
-
-              <p
-                className="
-                  mt-1 text-xs
-                  leading-relaxed
-                  text-amber-700
-                "
-              >
-                Puede modificar sus datos,
-                pero la disponibilidad y
-                el indicador destacado
-                permanecerán desactivados
-                hasta que el producto sea
-                reactivado.
-              </p>
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                  Recibirá prioridad visual en el catálogo.
+                </p>
+              </div>
             </div>
-          )}
-        </div>
+
+            <input
+              type="checkbox"
+              checked={formulario.destacado}
+              disabled={cargando}
+              onChange={(evento) =>
+                actualizarCampo(
+                  "destacado",
+                  evento.target.checked,
+                )
+              }
+              className="h-5 w-5 accent-red-600"
+            />
+          </label>
+        </section>
       </div>
 
-      <div
-        className="
-          flex flex-col-reverse gap-3
-          border-t border-slate-100
-          bg-slate-50 px-5 py-4
-          sm:flex-row
-          sm:justify-end sm:px-6
-        "
-      >
+      <section className="border-t border-slate-200 px-5 py-5 sm:px-6 dark:border-slate-800">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              <ChefHat size={20} />
+            </div>
+
+            <div>
+              <h3 className="font-black text-slate-900 dark:text-white">
+                Control de inventario
+              </h3>
+              <p className="mt-0.5 max-w-xl text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                Define los insumos que se descontarán automáticamente cada vez que se registre una venta.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() =>
+                actualizarCampo(
+                  "controlInventario",
+                  "Con receta",
+                )
+              }
+              className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors ${
+                controlConReceta
+                  ? "border-emerald-600 bg-emerald-600 text-white"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              <ChefHat size={17} />
+              Con receta
+            </button>
+
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() =>
+                actualizarCampo(
+                  "controlInventario",
+                  "No controla inventario",
+                )
+              }
+              className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors ${
+                !controlConReceta
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              <PackageOpen size={17} />
+              No controla inventario
+            </button>
+          </div>
+        </div>
+
+        {controlConReceta ? (
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
+            <div className="grid grid-cols-[minmax(0,1fr)_150px_44px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-400">
+              <span>Insumo</span>
+              <span>Cantidad</span>
+              <span />
+            </div>
+
+            <div className="max-h-56 space-y-2 overflow-y-auto bg-white p-3 dark:bg-slate-900">
+              {filasIngredientes.map(
+                (fila) => {
+                  const insumoSeleccionado =
+                    insumosDisponibles.find(
+                      (insumo) =>
+                        insumo.id ===
+                        Number(
+                          fila.insumoId,
+                        ),
+                    );
+
+                  return (
+                    <div
+                      key={fila.clave}
+                      className="grid grid-cols-[minmax(0,1fr)_150px_44px] gap-3"
+                    >
+                      <select
+                        value={fila.insumoId}
+                        disabled={cargando}
+                        onChange={(evento) =>
+                          actualizarIngrediente(
+                            fila.clave,
+                            "insumoId",
+                            evento.target.value,
+                          )
+                        }
+                        className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:ring-emerald-950/50"
+                      >
+                        <option value="">
+                          Selecciona un insumo
+                        </option>
+
+                        {insumosDisponibles.map(
+                          (insumo) => (
+                            <option
+                              key={insumo.id}
+                              value={insumo.id}
+                            >
+                              {insumo.codigo} · {insumo.nombre}
+                              {insumo.estado ===
+                              "Inactivo"
+                                ? " — Inactivo"
+                                : ""}
+                            </option>
+                          ),
+                        )}
+                      </select>
+
+                      <div className="relative">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0.000001"
+                          step="0.01"
+                          value={fila.cantidad}
+                          disabled={cargando}
+                          placeholder="0"
+                          onChange={(evento) =>
+                            actualizarIngrediente(
+                              fila.clave,
+                              "cantidad",
+                              evento.target.value,
+                            )
+                          }
+                          className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-3 pr-12 text-sm font-black text-slate-900 outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-emerald-950/50"
+                        />
+
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">
+                          {insumoSeleccionado?.unidadBase ??
+                            "—"}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        title="Quitar insumo"
+                        disabled={cargando}
+                        onClick={() =>
+                          eliminarIngrediente(
+                            fila.clave,
+                          )
+                        }
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950/70">
+              <div>
+                {errores.receta ? (
+                  <p className="text-xs font-bold text-red-600 dark:text-red-400">
+                    {errores.receta}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Las cantidades corresponden al consumo por una unidad vendida.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={agregarIngrediente}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-xs font-black text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-900/70 dark:bg-slate-900 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+              >
+                <Plus size={16} />
+                Agregar insumo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/35 dark:text-blue-200">
+            Este producto podrá venderse sin descontar insumos. Úsalo solamente cuando realmente no corresponda controlar inventario.
+          </div>
+        )}
+      </section>
+
+      <div className="sticky bottom-0 z-20 flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/95 px-5 py-4 shadow-[0_-10px_24px_-18px_rgba(15,23,42,.55)] backdrop-blur sm:flex-row sm:justify-end sm:px-6 dark:border-slate-800 dark:bg-slate-950/95">
         <button
           type="button"
           disabled={cargando}
           onClick={alCancelar}
-          className="
-            inline-flex items-center
-            justify-center gap-2
-            rounded-xl
-            border border-slate-300
-            bg-white px-5 py-3
-            text-sm font-bold
-            text-slate-700
-            transition-colors
-            hover:bg-slate-100
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-          "
+          className="inline-flex min-w-32 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
-          <X size={18} />
+          <X size={17} />
           Cancelar
         </button>
 
         <button
           type="submit"
-          disabled={
-            cargando ||
-            categoriasDisponibles.length ===
-              0
-          }
-          className="
-            inline-flex items-center
-            justify-center gap-2
-            rounded-xl
-            bg-red-700 px-5 py-3
-            text-sm font-bold
-            text-white
-            transition-colors
-            hover:bg-red-800
-            disabled:cursor-not-allowed
-            disabled:opacity-60
-          "
+          disabled={cargando}
+          className="inline-flex min-w-52 items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {cargando ? (
             <LoaderCircle
@@ -1116,7 +1175,7 @@ function FormularioProducto({
 
           {producto
             ? "Guardar cambios"
-            : "Registrar producto"}
+            : "Guardar producto y receta"}
         </button>
       </div>
     </form>

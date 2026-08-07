@@ -173,6 +173,39 @@ export async function obtenerPermisosRol(
   return [...rolEncontrado.permisos];
 }
 
+export async function obtenerPermisosRoles(
+  rolesUsuario: readonly RolUsuario[],
+): Promise<PermisoSistema[]> {
+  const rolesUnicos = Array.from(
+    new Set(rolesUsuario),
+  );
+
+  if (rolesUnicos.includes("Administrador")) {
+    return [...permisosSistema];
+  }
+
+  const configuraciones =
+    obtenerRolesPersistidos();
+
+  const permisos =
+    new Set<PermisoSistema>();
+
+  rolesUnicos.forEach((rol) => {
+    const configuracion =
+      configuraciones.find(
+        (item) => item.rol === rol,
+      );
+
+    configuracion?.permisos.forEach(
+      (permiso) => permisos.add(permiso),
+    );
+  });
+
+  return permisosSistema.filter(
+    (permiso) => permisos.has(permiso),
+  );
+}
+
 export async function actualizarPermisosRol(
   rol: RolUsuario,
   permisos: PermisoSistema[],

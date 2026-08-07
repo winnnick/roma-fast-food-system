@@ -3,7 +3,10 @@ import {
   CheckCircle2,
   ChefHat,
   Clock3,
+  ExternalLink,
   PackageCheck,
+  ReceiptText,
+  Share2,
   WalletCards,
 } from "lucide-react";
 
@@ -29,6 +32,14 @@ interface PanelPreparacionProps {
   alCobrar: (
     venta: Venta,
   ) => void;
+
+  clientesConEntregaIds: number[];
+
+  alCompartirEntrega: (
+    venta: Venta,
+  ) => void;
+
+  alAbrirPantallaPedidos: () => void;
 }
 
 interface TarjetaPedidoProps {
@@ -48,6 +59,12 @@ interface TarjetaPedidoProps {
   alCobrar: (
     venta: Venta,
   ) => void;
+
+  clientesConEntregaIds: number[];
+
+  alCompartirEntrega: (
+    venta: Venta,
+  ) => void;
 }
 
 function formatearHora(
@@ -65,39 +82,77 @@ function formatearHora(
 function formatearMoneda(
   valor: number,
 ): string {
-  const monto =
-    new Intl.NumberFormat(
-      "es-BO",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      },
-    ).format(valor);
-
-  return `Bs ${monto}`;
+  return `Bs ${new Intl.NumberFormat(
+    "es-BO",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  ).format(valor)}`;
 }
 
 function obtenerResumenProductos(
   venta: Venta,
 ): string {
-  const productos =
-    venta.detalles
-      .slice(0, 3)
-      .map(
-        (detalle) =>
-          `${detalle.cantidad}× ${detalle.nombreProducto}`,
-      )
-      .join(", ");
+  const productos = venta.detalles
+    .slice(0, 3)
+    .map(
+      (detalle) =>
+        `${detalle.cantidad}× ${detalle.nombreProducto}`,
+    )
+    .join(" · ");
 
-  if (
-    venta.detalles.length <= 3
-  ) {
+  if (venta.detalles.length <= 3) {
     return productos;
   }
 
-  return `${productos} y ${
-    venta.detalles.length - 3
-  } más`;
+  return `${productos} · +${venta.detalles.length - 3}`;
+}
+
+function obtenerConfiguracionEstado(
+  venta: Venta,
+) {
+  if (
+    venta.estadoPreparacion ===
+    "Listo"
+  ) {
+    return {
+      borde: "border-emerald-400",
+      texto: "text-emerald-600",
+      icono:
+        "bg-slate-100 text-emerald-600",
+      etiqueta:
+        "border-emerald-300 text-emerald-700",
+      Icono: CheckCircle2,
+    };
+  }
+
+  if (
+    venta.estadoPreparacion ===
+      "Entregado" &&
+    venta.estadoCobro ===
+      "Pendiente de cobro"
+  ) {
+    return {
+      borde: "border-blue-400",
+      texto: "text-blue-600",
+      icono:
+        "bg-slate-100 text-blue-600",
+      etiqueta:
+        "border-blue-300 text-blue-700",
+      Icono: PackageCheck,
+    };
+  }
+
+  return {
+    borde: "border-amber-400",
+    texto: "text-amber-600",
+    icono:
+      "bg-slate-100 text-amber-600",
+    etiqueta:
+      "border-amber-300 text-amber-700",
+    Icono: ChefHat,
+  };
 }
 
 function TarjetaPedido({
@@ -107,337 +162,222 @@ function TarjetaPedido({
   alCambiarEstado,
   alAnular,
   alCobrar,
+  clientesConEntregaIds,
+  alCompartirEntrega,
 }: TarjetaPedidoProps) {
-  const estaListo =
-    venta.estadoPreparacion ===
-    "Listo";
+  const configuracion =
+    obtenerConfiguracionEstado(venta);
 
-  const puedeMostrarAcciones =
-    puedeGestionar ||
-    (puedeCobrar &&
-      venta.estadoCobro ===
-        "Pendiente de cobro");
+  const IconoEstado =
+    configuracion.Icono;
+
+  const pendienteCobro =
+    venta.estadoCobro ===
+    "Pendiente de cobro";
+
+  const puedeMarcarListo =
+    puedeGestionar &&
+    venta.estadoPreparacion ===
+      "En preparación";
+
+  const puedeEntregar =
+    puedeGestionar &&
+    (venta.estadoPreparacion ===
+      "En preparación" ||
+      venta.estadoPreparacion ===
+        "Listo");
+
+  const puedeAnular =
+    puedeGestionar &&
+    venta.estadoPreparacion !==
+      "Anulado";
+
+  const puedeRegistrarCobro =
+    puedeCobrar && pendienteCobro;
+
+  const puedeCompartirEntrega =
+    venta.clienteId !== null &&
+    clientesConEntregaIds.includes(
+      venta.clienteId,
+    );
+
+  const cantidadAcciones = [
+    puedeMarcarListo,
+    puedeEntregar,
+    puedeRegistrarCobro,
+    puedeCompartirEntrega,
+    puedeAnular,
+  ].filter(Boolean).length;
+
+  const fechaReferencia =
+    venta.estadoPreparacion ===
+      "Listo" &&
+    venta.fechaHoraListo
+      ? venta.fechaHoraListo
+      : venta.estadoPreparacion ===
+          "Entregado" &&
+          venta.fechaHoraEntregado
+        ? venta.fechaHoraEntregado
+        : venta.fechaHoraInicioPreparacion;
 
   return (
     <article
-      className={`
-        overflow-hidden rounded-3xl
-        border bg-white
-        shadow-sm transition-shadow
-        hover:shadow-md
-        ${
-          estaListo
-            ? "border-emerald-200"
-            : "border-amber-200"
-        }
-      `}
+      className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${configuracion.borde}`}
     >
-      <div
-        className={`
-          flex items-center
-          justify-between gap-4
-          px-5 py-4
-          ${
-            estaListo
-              ? "bg-emerald-50"
-              : "bg-amber-50"
-          }
-        `}
-      >
-        <div>
-          <p
-            className="
-              text-xs font-bold
-              uppercase tracking-wider
-              text-slate-500
-            "
-          >
-            N.º de pedido
-          </p>
-
-          <h3
-            className="
-              mt-1 text-2xl
-              font-black
-              text-slate-950
-            "
-          >
-            {venta.numeroPedido}
-          </h3>
-        </div>
-
+      <div className="flex items-start gap-3">
         <div
-          className={`
-            flex h-12 w-12
-            items-center
-            justify-center
-            rounded-2xl
-            ${
-              estaListo
-                ? "bg-emerald-600 text-white"
-                : "bg-amber-500 text-white"
-            }
-          `}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${configuracion.icono}`}
         >
-          {estaListo ? (
-            <CheckCircle2 size={24} />
-          ) : (
-            <ChefHat size={24} />
-          )}
-        </div>
-      </div>
-
-      <div className="p-5">
-        <div
-          className="
-            flex flex-wrap
-            items-center gap-3
-          "
-        >
-          <span
-            className={`
-              inline-flex rounded-full
-              px-3 py-1
-              text-xs font-bold
-              ${
-                estaListo
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }
-            `}
-          >
-            {venta.estadoPreparacion}
-          </span>
-
-          <span
-            className={`
-              inline-flex rounded-full
-              px-3 py-1
-              text-xs font-bold
-              ${
-                venta.estadoCobro ===
-                "Cobrada"
-                  ? "bg-blue-50 text-blue-700"
-                  : "bg-red-50 text-red-700"
-              }
-            `}
-          >
-            {venta.estadoCobro}
-          </span>
-
-          <span
-            className="
-              inline-flex items-center
-              gap-1.5 text-xs
-              font-semibold
-              text-slate-500
-            "
-          >
-            <Clock3 size={14} />
-
-            {formatearHora(
-              estaListo &&
-                venta.fechaHoraListo
-                ? venta.fechaHoraListo
-                : venta
-                    .fechaHoraInicioPreparacion,
-            )}
-          </span>
+          <IconoEstado size={19} />
         </div>
 
-        <p
-          className="
-            mt-4 font-bold
-            text-slate-900
-          "
-        >
-          {venta.clienteNombre}
-        </p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-900">
+                {venta.clienteNombre}
+              </p>
 
-        <p
-          className="
-            mt-2 text-sm
-            leading-relaxed
-            text-slate-600
-          "
-        >
-          {obtenerResumenProductos(
-            venta,
-          )}
-        </p>
-
-        {venta.observaciones && (
-          <p
-            className="
-              mt-3 rounded-xl
-              bg-slate-50 p-3
-              text-xs italic
-              leading-relaxed
-              text-slate-500
-            "
-          >
-            {venta.observaciones}
-          </p>
-        )}
-
-        <div
-          className="
-            mt-5 flex items-center
-            justify-between gap-3
-            border-t border-slate-100
-            pt-4
-          "
-        >
-          <span
-            className="
-              text-xs font-semibold
-              text-slate-500
-            "
-          >
-            Total
-          </span>
-
-          <strong
-            className="
-              text-lg font-black
-              text-slate-900
-            "
-          >
-            {formatearMoneda(
-              venta.total,
-            )}
-          </strong>
-        </div>
-
-        {puedeMostrarAcciones ? (
-          <div
-            className="
-              mt-5 grid gap-2
-              sm:grid-cols-2
-            "
-          >
-            {puedeGestionar &&
-              venta.estadoPreparacion ===
-                "En preparación" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    alCambiarEstado(
-                      venta,
-                      "Listo",
-                    )
-                  }
-                  className="
-                    inline-flex items-center
-                    justify-center gap-2
-                    rounded-xl
-                    bg-emerald-600
-                    px-4 py-3
-                    text-sm font-bold
-                    text-white
-                    hover:bg-emerald-700
-                  "
-                >
-                  <CheckCircle2
-                    size={17}
-                  />
-
-                  Marcar listo
-                </button>
-              )}
-
-            {puedeGestionar &&
-              venta.estadoPreparacion ===
-                "Listo" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    alCambiarEstado(
-                      venta,
-                      "Entregado",
-                    )
-                  }
-                  className="
-                    inline-flex items-center
-                    justify-center gap-2
-                    rounded-xl
-                    bg-blue-600
-                    px-4 py-3
-                    text-sm font-bold
-                    text-white
-                    hover:bg-blue-700
-                  "
-                >
-                  <PackageCheck
-                    size={17}
-                  />
-
-                  Marcar entregado
-                </button>
-              )}
-
-            {puedeCobrar &&
-              venta.estadoCobro ===
-                "Pendiente de cobro" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    alCobrar(venta)
-                  }
-                  className="
-                    inline-flex items-center
-                    justify-center gap-2
-                    rounded-xl
-                    bg-indigo-600
-                    px-4 py-3
-                    text-sm font-bold
-                    text-white
-                    hover:bg-indigo-700
-                  "
-                >
-                  <WalletCards
-                    size={17}
-                  />
-
-                  Cobrar
-                </button>
-              )}
-
-            {puedeGestionar && (
-              <button
-                type="button"
-                onClick={() =>
-                  alAnular(venta)
-                }
-                className="
-                  inline-flex items-center
-                  justify-center gap-2
-                  rounded-xl
-                  bg-red-50
-                  px-4 py-3
-                  text-sm font-bold
-                  text-red-700
-                  hover:bg-red-100
-                "
+              <p
+                className={`mt-0.5 text-lg font-black ${configuracion.texto}`}
               >
-                <Ban size={17} />
+                {venta.numeroPedido}
+              </p>
+            </div>
 
-                Anular
-              </button>
-            )}
+            <div className="text-right">
+              <p className="text-sm font-black text-slate-900">
+                {formatearMoneda(
+                  venta.total,
+                )}
+              </p>
+
+              <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500">
+                <Clock3 size={12} />
+                {formatearHora(
+                  fechaReferencia,
+                )}
+              </p>
+            </div>
           </div>
-        ) : (
-          <p
-            className="
-              mt-5 text-center
-              text-xs font-semibold
-              text-slate-400
-            "
-          >
-            Modo de consulta
+
+          <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
+            {obtenerResumenProductos(
+              venta,
+            )}
           </p>
-        )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span
+              className={`rounded-full border bg-slate-100 px-2.5 py-1 text-[10px] font-black ${configuracion.etiqueta}`}
+            >
+              {venta.estadoPreparacion}
+            </span>
+
+            <span
+              className={`rounded-full border bg-slate-100 px-2.5 py-1 text-[10px] font-black ${
+                pendienteCobro
+                  ? "border-rose-300 text-rose-700"
+                  : "border-blue-300 text-blue-700"
+              }`}
+            >
+              {venta.estadoCobro}
+            </span>
+          </div>
+
+          {venta.observaciones && (
+            <p className="mt-3 line-clamp-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs italic leading-relaxed text-slate-500">
+              {venta.observaciones}
+            </p>
+          )}
+        </div>
       </div>
+
+      {cantidadAcciones > 0 ? (
+        <div
+          className={`mt-4 grid gap-2 ${
+            cantidadAcciones === 1
+              ? "grid-cols-1"
+              : "grid-cols-2"
+          }`}
+        >
+          {puedeMarcarListo && (
+            <button
+              type="button"
+              onClick={() =>
+                alCambiarEstado(
+                  venta,
+                  "Listo",
+                )
+              }
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-xs font-black text-white shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-emerald-700 hover:bg-emerald-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 active:translate-y-0 active:shadow-sm"
+            >
+              <CheckCircle2 size={15} />
+              Marcar listo
+            </button>
+          )}
+
+          {puedeEntregar && (
+            <button
+              type="button"
+              onClick={() =>
+                alCambiarEstado(
+                  venta,
+                  "Entregado",
+                )
+              }
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-blue-700 hover:bg-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 active:translate-y-0 active:shadow-sm"
+            >
+              <PackageCheck size={15} />
+              Entregar
+            </button>
+          )}
+
+          {puedeRegistrarCobro && (
+            <button
+              type="button"
+              onClick={() =>
+                alCobrar(venta)
+              }
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-violet-600 bg-violet-600 px-3 py-2 text-xs font-black text-white shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-violet-700 hover:bg-violet-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 active:translate-y-0 active:shadow-sm"
+            >
+              <WalletCards size={15} />
+              Cobrar
+            </button>
+          )}
+
+
+          {puedeCompartirEntrega && (
+            <button
+              type="button"
+              onClick={() =>
+                alCompartirEntrega(venta)
+              }
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-teal-600 bg-teal-600 px-3 py-2 text-xs font-black text-white shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-teal-700 hover:bg-teal-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 active:translate-y-0 active:shadow-sm"
+            >
+              <Share2 size={15} />
+              Entrega
+            </button>
+          )}
+
+          {puedeAnular && (
+            <button
+              type="button"
+              onClick={() =>
+                alAnular(venta)
+              }
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-600 bg-red-600 px-3 py-2 text-xs font-black text-white shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-red-700 hover:bg-red-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 active:translate-y-0 active:shadow-sm"
+            >
+              <Ban size={15} />
+              Anular
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-500">
+          Pedido disponible solo para consulta.
+        </p>
+      )}
     </article>
   );
 }
@@ -449,258 +389,167 @@ function PanelPreparacion({
   alCambiarEstado,
   alAnular,
   alCobrar,
+  clientesConEntregaIds,
+  alCompartirEntrega,
+  alAbrirPantallaPedidos,
 }: PanelPreparacionProps) {
-  const ventasEnPreparacion =
-    ventas
-      .filter(
-        (venta) =>
-          venta.estadoPreparacion ===
-          "En preparación",
-      )
-      .sort(
-        (ventaA, ventaB) =>
-          new Date(
-            ventaA.fechaHoraRegistro,
-          ).getTime() -
-          new Date(
-            ventaB.fechaHoraRegistro,
-          ).getTime(),
-      );
+  const pedidosEnCurso = ventas
+    .filter((venta) => {
+      const pedidoAnulado =
+        venta.estadoPreparacion ===
+          "Anulado" ||
+        venta.estadoCobro ===
+          "Anulada";
 
-  const ventasListas =
-    ventas
-      .filter(
-        (venta) =>
-          venta.estadoPreparacion ===
-          "Listo",
-      )
-      .sort(
-        (ventaA, ventaB) =>
-          new Date(
-            ventaA.fechaHoraListo ??
-              ventaA.fechaHoraRegistro,
-          ).getTime() -
-          new Date(
-            ventaB.fechaHoraListo ??
-              ventaB.fechaHoraRegistro,
-          ).getTime(),
+      if (pedidoAnulado) {
+        return false;
+      }
+
+      const sigueEnPreparacion =
+        venta.estadoPreparacion ===
+          "En preparación" ||
+        venta.estadoPreparacion ===
+          "Listo";
+
+      const siguePendienteCobro =
+        venta.estadoCobro ===
+        "Pendiente de cobro";
+
+      /*
+       * Regla operativa:
+       * ningún pedido sin cobrar debe salir de la cola,
+       * incluso si ya fue marcado como entregado.
+       */
+      return (
+        sigueEnPreparacion ||
+        siguePendienteCobro
       );
+    })
+    .sort((ventaA, ventaB) => {
+      const prioridad = (
+        venta: Venta,
+      ) => {
+        if (
+          venta.estadoPreparacion ===
+          "Listo"
+        ) {
+          return 0;
+        }
+
+        if (
+          venta.estadoPreparacion ===
+          "En preparación"
+        ) {
+          return 1;
+        }
+
+        return 2;
+      };
+
+      const diferenciaPrioridad =
+        prioridad(ventaA) -
+        prioridad(ventaB);
+
+      if (diferenciaPrioridad !== 0) {
+        return diferenciaPrioridad;
+      }
+
+      return (
+        new Date(
+          ventaA.fechaHoraRegistro,
+        ).getTime() -
+        new Date(
+          ventaB.fechaHoraRegistro,
+        ).getTime()
+      );
+    });
 
   return (
-    <div className="p-5 sm:p-6">
-      <div
-        className="
-          grid gap-8
-          2xl:grid-cols-2
-        "
-      >
-        <section>
-          <div
-            className="
-              flex items-center
-              justify-between gap-4
-            "
-          >
-            <div>
-              <h2
-                className="
-                  text-xl font-black
-                  text-slate-900
-                "
-              >
-                En preparación
-              </h2>
-
-              <p
-                className="
-                  mt-1 text-sm
-                  text-slate-500
-                "
-              >
-                Pedidos que actualmente
-                están siendo preparados.
-              </p>
-            </div>
-
-            <span
-              className="
-                rounded-full
-                bg-amber-100
-                px-3 py-1
-                text-sm font-black
-                text-amber-700
-              "
-            >
-              {
-                ventasEnPreparacion.length
-              }
-            </span>
-          </div>
-
-          {ventasEnPreparacion.length ===
-          0 ? (
-            <div
-              className="
-                mt-5 rounded-3xl
-                border border-dashed
-                border-slate-300
-                p-10 text-center
-              "
-            >
-              <ChefHat
-                size={34}
-                className="
-                  mx-auto text-slate-300
-                "
+    <aside className="flex h-full min-h-[48rem] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-panel">
+      <header className="border-b border-slate-200 bg-slate-50 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <ReceiptText
+                size={18}
+                className="text-roma-600"
               />
 
-              <p
-                className="
-                  mt-4 font-bold
-                  text-slate-700
-                "
-              >
-                No hay pedidos en
-                preparación
-              </p>
-            </div>
-          ) : (
-            <div
-              className="
-                mt-5 grid gap-4
-                xl:grid-cols-2
-                2xl:grid-cols-1
-              "
-            >
-              {ventasEnPreparacion.map(
-                (venta) => (
-                  <TarjetaPedido
-                    key={venta.id}
-                    venta={venta}
-                    puedeGestionar={
-                      puedeGestionar
-                    }
-                    puedeCobrar={
-                      puedeCobrar
-                    }
-                    alCambiarEstado={
-                      alCambiarEstado
-                    }
-                    alAnular={
-                      alAnular
-                    }
-                    alCobrar={
-                      alCobrar
-                    }
-                  />
-                ),
-              )}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <div
-            className="
-              flex items-center
-              justify-between gap-4
-            "
-          >
-            <div>
-              <h2
-                className="
-                  text-xl font-black
-                  text-slate-900
-                "
-              >
-                Listos para entregar
+              <h2 className="font-black text-slate-900">
+                Pedidos en curso
               </h2>
-
-              <p
-                className="
-                  mt-1 text-sm
-                  text-slate-500
-                "
-              >
-                Pedidos terminados que
-                esperan ser recogidos.
-              </p>
             </div>
 
-            <span
-              className="
-                rounded-full
-                bg-emerald-100
-                px-3 py-1
-                text-sm font-black
-                text-emerald-700
-              "
-            >
-              {ventasListas.length}
-            </span>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Preparación, entrega y cobros pendientes en una sola cola.
+            </p>
           </div>
 
-          {ventasListas.length === 0 ? (
-            <div
-              className="
-                mt-5 rounded-3xl
-                border border-dashed
-                border-slate-300
-                p-10 text-center
-              "
-            >
-              <CheckCircle2
-                size={34}
-                className="
-                  mx-auto text-slate-300
-                "
-              />
+          <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700">
+            {pedidosEnCurso.length}
+          </span>
+        </div>
+      </header>
 
-              <p
-                className="
-                  mt-4 font-bold
-                  text-slate-700
-                "
-              >
-                No hay pedidos listos
-              </p>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {pedidosEnCurso.length === 0 ? (
+          <div className="flex h-full min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 p-6 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+              <ChefHat size={24} />
             </div>
-          ) : (
-            <div
-              className="
-                mt-5 grid gap-4
-                xl:grid-cols-2
-                2xl:grid-cols-1
-              "
-            >
-              {ventasListas.map(
-                (venta) => (
-                  <TarjetaPedido
-                    key={venta.id}
-                    venta={venta}
-                    puedeGestionar={
-                      puedeGestionar
-                    }
-                    puedeCobrar={
-                      puedeCobrar
-                    }
-                    alCambiarEstado={
-                      alCambiarEstado
-                    }
-                    alAnular={
-                      alAnular
-                    }
-                    alCobrar={
-                      alCobrar
-                    }
-                  />
-                ),
-              )}
-            </div>
-          )}
-        </section>
+
+            <p className="mt-4 font-black text-slate-800">
+              No hay pedidos en curso
+            </p>
+
+            <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500">
+              Los pedidos nuevos aparecerán aquí automáticamente.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pedidosEnCurso.map(
+              (venta) => (
+                <TarjetaPedido
+                  key={venta.id}
+                  venta={venta}
+                  puedeGestionar={
+                    puedeGestionar
+                  }
+                  puedeCobrar={
+                    puedeCobrar
+                  }
+                  alCambiarEstado={
+                    alCambiarEstado
+                  }
+                  alAnular={alAnular}
+                  alCobrar={alCobrar}
+                  clientesConEntregaIds={
+                    clientesConEntregaIds
+                  }
+                  alCompartirEntrega={
+                    alCompartirEntrega
+                  }
+                />
+              ),
+            )}
+          </div>
+        )}
       </div>
-    </div>
+
+      <div className="border-t border-slate-200 bg-slate-50 p-3">
+        <button
+          type="button"
+          onClick={
+            alAbrirPantallaPedidos
+          }
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100"
+        >
+          <ExternalLink size={17} />
+          Abrir pantalla de pedidos
+        </button>
+      </div>
+    </aside>
   );
 }
 

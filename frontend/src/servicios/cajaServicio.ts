@@ -5,6 +5,8 @@ import type {
 import type {
   AbrirCajaDto,
   CerrarCajaDto,
+  FiltroMovimientosCaja,
+  FiltroSesionesCaja,
   MetodoPago,
   MovimientoCaja,
   PagoVenta,
@@ -228,29 +230,53 @@ function normalizarTextoOpcional(
   return texto;
 }
 
-function obtenerCajaAbiertaPersistida():
-  SesionCaja | null {
-  const sesiones =
-    obtenerSesionesPersistidas();
+function obtenerCajasAbiertasPersistidas():
+  SesionCaja[] {
+  return obtenerSesionesPersistidas()
+    .filter(
+      (sesion) =>
+        sesion.estado ===
+        "Abierta",
+    )
+    .sort(
+      (sesionA, sesionB) =>
+        new Date(
+          sesionB.fechaHoraApertura,
+        ).getTime() -
+        new Date(
+          sesionA.fechaHoraApertura,
+        ).getTime(),
+    );
+}
 
-  const cajasAbiertas =
-    sesiones
-      .filter(
+function obtenerCajaAbiertaUsuarioPersistida(
+  usuarioId: number,
+): SesionCaja | null {
+  return (
+    obtenerCajasAbiertasPersistidas()
+      .find(
         (sesion) =>
-          sesion.estado ===
-          "Abierta",
-      )
-      .sort(
-        (sesionA, sesionB) =>
-          new Date(
-            sesionB.fechaHoraApertura,
-          ).getTime() -
-          new Date(
-            sesionA.fechaHoraApertura,
-          ).getTime(),
-      );
+          sesion.usuarioAperturaId ===
+          usuarioId,
+      ) ?? null
+  );
+}
 
-  return cajasAbiertas[0] ?? null;
+function exigirCajaAbiertaUsuario(
+  usuario: UsuarioSesion,
+): SesionCaja {
+  const caja =
+    obtenerCajaAbiertaUsuarioPersistida(
+      usuario.id,
+    );
+
+  if (!caja) {
+    throw new Error(
+      "No tienes una caja abierta. Abre tu caja antes de realizar esta operación.",
+    );
+  }
+
+  return caja;
 }
 
 function calcularDescuento(
@@ -488,23 +514,64 @@ function calcularDistribucionPago(
   };
 }
 
+/**
+ * Compatibilidad con paneles generales.
+ * Devuelve la caja abierta más reciente, sin
+ * asumir que sea la del usuario actual.
+ */
 export async function obtenerCajaAbierta():
   Promise<SesionCaja | null> {
   await esperar(250);
 
   const caja =
-    obtenerCajaAbiertaPersistida();
+    obtenerCajasAbiertasPersistidas()[0] ??
+    null;
 
   return caja
     ? clonarSesion(caja)
     : null;
 }
 
-export async function listarSesionesCaja():
+export async function obtenerCajaAbiertaPorUsuario(
+  usuarioId: number,
+): Promise<SesionCaja | null> {
+  await esperar(250);
+
+  const caja =
+    obtenerCajaAbiertaUsuarioPersistida(
+      usuarioId,
+    );
+
+  return caja
+    ? clonarSesion(caja)
+    : null;
+}
+
+export async function listarCajasAbiertas():
   Promise<SesionCaja[]> {
+  await esperar(250);
+
+  return obtenerCajasAbiertasPersistidas()
+    .map(clonarSesion);
+}
+
+export async function listarSesionesCaja(
+  filtros: FiltroSesionesCaja = {},
+): Promise<SesionCaja[]> {
   await esperar(300);
 
   return obtenerSesionesPersistidas()
+    .filter(
+      (sesion) =>
+        (filtros.usuarioId ===
+          undefined ||
+          sesion.usuarioAperturaId ===
+            filtros.usuarioId) &&
+        (filtros.estado ===
+          undefined ||
+          sesion.estado ===
+            filtros.estado),
+    )
     .sort(
       (sesionA, sesionB) =>
         new Date(
@@ -518,17 +585,27 @@ export async function listarSesionesCaja():
 }
 
 export async function listarMovimientosCaja(
-  sesionCajaId?: number,
+  filtros: FiltroMovimientosCaja | number = {},
 ): Promise<MovimientoCaja[]> {
   await esperar(300);
+
+  const filtrosNormalizados:
+    FiltroMovimientosCaja =
+    typeof filtros === "number"
+      ? { sesionCajaId: filtros }
+      : filtros;
 
   return obtenerMovimientosPersistidos()
     .filter(
       (movimiento) =>
-        sesionCajaId ===
+        (filtrosNormalizados.sesionCajaId ===
           undefined ||
-        movimiento.sesionCajaId ===
-          sesionCajaId,
+          movimiento.sesionCajaId ===
+            filtrosNormalizados.sesionCajaId) &&
+        (filtrosNormalizados.usuarioId ===
+          undefined ||
+          movimiento.usuarioId ===
+            filtrosNormalizados.usuarioId),
     )
     .sort(
       (movimientoA, movimientoB) =>
@@ -712,12 +789,14 @@ export async function abrirCaja(
 
   exigirPermisoCaja(usuario);
 
-  const cajaAbierta =
-    obtenerCajaAbiertaPersistida();
+  const cajaAbiertaUsuario =
+    obtenerCajaAbiertaUsuarioPersistida(
+      usuario.id,
+    );
 
-  if (cajaAbierta) {
+  if (cajaAbiertaUsuario) {
     throw new Error(
-      `Ya existe una caja abierta por ${cajaAbierta.usuarioAperturaNombre}.`,
+      `Ya tienes abierta la caja N.º ${cajaAbiertaUsuario.id}. Debes cerrarla antes de iniciar otra.`,
     );
   }
 
@@ -793,13 +872,9 @@ export async function registrarMovimientoManual(
   exigirPermisoCaja(usuario);
 
   const caja =
-    obtenerCajaAbiertaPersistida();
-
-  if (!caja) {
-    throw new Error(
-      "No existe una caja abierta.",
+    exigirCajaAbiertaUsuario(
+      usuario,
     );
-  }
 
   const concepto =
     datos.concepto.trim();
@@ -890,13 +965,9 @@ export async function registrarPagoVenta(
   exigirPermisoCaja(usuario);
 
   const caja =
-    obtenerCajaAbiertaPersistida();
-
-  if (!caja) {
-    throw new Error(
-      "No existe una caja abierta. Abre una caja antes de registrar el cobro.",
+    exigirCajaAbiertaUsuario(
+      usuario,
     );
-  }
 
   const venta =
     await obtenerVentaPorId(
@@ -1109,13 +1180,9 @@ export async function cerrarCaja(
   exigirPermisoCaja(usuario);
 
   const caja =
-    obtenerCajaAbiertaPersistida();
-
-  if (!caja) {
-    throw new Error(
-      "No existe una caja abierta para cerrar.",
+    exigirCajaAbiertaUsuario(
+      usuario,
     );
-  }
 
   const montoContado =
     validarMontoNoNegativo(

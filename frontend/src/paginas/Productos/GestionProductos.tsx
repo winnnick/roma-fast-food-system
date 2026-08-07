@@ -1,19 +1,19 @@
 import {
-  AlertTriangle,
+  Boxes,
+  ChefHat,
   CircleDollarSign,
+  CirclePower,
+  Edit3,
   ImageOff,
   LoaderCircle,
-  Package,
-  PackageCheck,
-  PackageX,
-  Pencil,
-  Plus,
+  PackageOpen,
+  PackagePlus,
   Power,
   RotateCcw,
   Search,
   Sparkles,
   Star,
-  StarOff,
+  Tags,
 } from "lucide-react";
 
 import {
@@ -24,26 +24,41 @@ import {
 } from "react";
 
 import {
-  auditarAccion,
-} from "../../servicios/auditoriaAccionesServicio";
+  useAuth,
+} from "../../contextos/AuthContext";
 
 import {
-  actualizarProducto,
-  cambiarDisponibilidadProducto,
-  cambiarEstadoProducto,
-  cambiarProductoDestacado,
-  crearProducto,
-  listarProductos,
-} from "../../servicios/productoServicio";
+  auditarAccion,
+} from "../../servicios/auditoriaAccionesServicio";
 
 import {
   listarCategorias,
 } from "../../servicios/categoriaServicio";
 
+import {
+  cambiarEstadoProducto,
+  cambiarProductoDestacado,
+  listarProductos,
+} from "../../servicios/productoServicio";
+
+import {
+  actualizarProductoConInventario,
+  crearProductoConInventario,
+  listarEstadosInventarioProductos,
+  listarInsumosInventario,
+  obtenerRecetaVigenteProducto,
+} from "../../servicios/inventarioServicio";
+
+import type {
+  InsumoInventario,
+  RecetaProducto,
+} from "../../tipos/inventario";
+
 import type {
   CategoriaProducto,
-  CrearProductoDto,
   EstadoCatalogo,
+  EstadoConfiguracionInventarioProducto,
+  EstadoInventarioProducto,
   ProductoMenu,
 } from "../../tipos/producto";
 
@@ -55,18 +70,17 @@ import Modal from "../../shared/ui/Modal";
 import ModalConfirmacion from "../../shared/ui/ModalConfirmacion";
 import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
-import FormularioProducto from "./FormularioProducto";
+import FormularioProducto, {
+  type DatosFormularioProductoIntegrado,
+} from "./FormularioProducto";
 
-const PRODUCTOS_POR_PAGINA = 6;
+import GestionCategorias from "./GestionCategorias";
 
-type FiltroEstadoProducto =
+const PRODUCTOS_POR_PAGINA = 8;
+
+type FiltroInventario =
   | "Todos"
-  | EstadoCatalogo;
-
-type FiltroDisponibilidad =
-  | "Todas"
-  | "Disponible"
-  | "No disponible";
+  | EstadoConfiguracionInventarioProducto;
 
 interface GestionProductosProps {
   puedeGestionar: boolean;
@@ -80,45 +94,56 @@ interface AccionEstadoProducto {
 function obtenerMensajeError(
   error: unknown,
 ): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Ocurrió un error inesperado.";
+  return error instanceof Error
+    ? error.message
+    : "Ocurrió un error inesperado.";
 }
 
 function formatearPrecio(
   precio: number,
 ): string {
-  const valor =
-    new Intl.NumberFormat("es-BO", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(precio);
-
-  return `Bs ${valor}`;
-}
-
-function formatearFecha(
-  fecha: string,
-): string {
-  return new Intl.DateTimeFormat(
+  return `Bs ${new Intl.NumberFormat(
     "es-BO",
     {
-      dateStyle: "medium",
-      timeStyle: "short",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     },
-  ).format(new Date(fecha));
+  ).format(precio)}`;
+}
+
+function claseInventario(
+  estado:
+    EstadoConfiguracionInventarioProducto,
+): string {
+  if (estado === "Receta configurada") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300";
+  }
+
+  if (estado === "Sin receta") {
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300";
+  }
+
+  return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300";
 }
 
 function GestionProductos({
   puedeGestionar,
 }: GestionProductosProps) {
+  const { usuario } = useAuth();
+
   const [productos, setProductos] =
     useState<ProductoMenu[]>([]);
 
   const [categorias, setCategorias] =
     useState<CategoriaProducto[]>([]);
+
+  const [insumos, setInsumos] =
+    useState<InsumoInventario[]>([]);
+
+  const [estadosInventario, setEstadosInventario] =
+    useState<EstadoInventarioProducto[]>(
+      [],
+    );
 
   const [cargando, setCargando] =
     useState(true);
@@ -129,66 +154,56 @@ function GestionProductos({
   const [busqueda, setBusqueda] =
     useState("");
 
-  const [
-    filtroCategoria,
-    setFiltroCategoria,
-  ] = useState("Todas");
+  const [filtroCategoria, setFiltroCategoria] =
+    useState("Todas");
 
-  const [
-    filtroEstado,
-    setFiltroEstado,
-  ] =
-    useState<FiltroEstadoProducto>(
+  const [filtroEstado, setFiltroEstado] =
+    useState<"Todos" | EstadoCatalogo>(
       "Todos",
     );
 
-  const [
-    filtroDisponibilidad,
-    setFiltroDisponibilidad,
-  ] =
-    useState<FiltroDisponibilidad>(
-      "Todas",
+  const [filtroInventario, setFiltroInventario] =
+    useState<FiltroInventario>(
+      "Todos",
     );
 
   const [paginaActual, setPaginaActual] =
     useState(1);
 
-  const [
-    modalFormularioAbierto,
-    setModalFormularioAbierto,
-  ] = useState(false);
+  const [modalProducto, setModalProducto] =
+    useState(false);
 
-  const [
-    productoEnEdicion,
-    setProductoEnEdicion,
-  ] =
-    useState<ProductoMenu | null>(null);
+  const [modalCategorias, setModalCategorias] =
+    useState(false);
+
+  const [productoEdicion, setProductoEdicion] =
+    useState<ProductoMenu | null>(
+      null,
+    );
+
+  const [recetaEdicion, setRecetaEdicion] =
+    useState<RecetaProducto | null>(
+      null,
+    );
 
   const [guardando, setGuardando] =
     useState(false);
 
-  const [
-    accionEstado,
-    setAccionEstado,
-  ] =
+  const [cargandoEdicion, setCargandoEdicion] =
+    useState(false);
+
+  const [accionEstado, setAccionEstado] =
     useState<AccionEstadoProducto | null>(
       null,
     );
 
-  const [
-    cambiandoEstado,
-    setCambiandoEstado,
-  ] = useState(false);
+  const [procesandoEstado, setProcesandoEstado] =
+    useState(false);
 
-  const [
-    productoProcesandoId,
-    setProductoProcesandoId,
-  ] = useState<number | null>(null);
+  const [productoProcesandoId, setProductoProcesandoId] =
+    useState<number | null>(null);
 
-  const [
-    notificacion,
-    setNotificacion,
-  ] =
+  const [notificacion, setNotificacion] =
     useState<DatosNotificacion | null>(
       null,
     );
@@ -198,169 +213,171 @@ function GestionProductos({
       setNotificacion(null);
     }, []);
 
-  useEffect(() => {
-    let componenteActivo = true;
+  const obtenerDatos =
+    useCallback(async () => {
+      return Promise.all([
+        listarProductos(),
+        listarCategorias(),
+        listarInsumosInventario(),
+        listarEstadosInventarioProductos(),
+      ]);
+    }, []);
 
-    Promise.all([
-      listarProductos(),
-      listarCategorias(),
-    ])
-      .then(
-        ([
-          productosObtenidos,
-          categoriasObtenidas,
-        ]) => {
-          if (!componenteActivo) {
-            return;
-          }
+  const aplicarDatos =
+    useCallback(
+      (
+        datos: Awaited<
+          ReturnType<typeof obtenerDatos>
+        >,
+      ) => {
+        const [
+          productosDatos,
+          categoriasDatos,
+          insumosDatos,
+          estadosDatos,
+        ] = datos;
 
-          setProductos(
-            productosObtenidos,
-          );
+        setProductos(productosDatos);
+        setCategorias(categoriasDatos);
+        setInsumos(insumosDatos);
+        setEstadosInventario(estadosDatos);
+      },
+      [],
+    );
 
-          setCategorias(
-            categoriasObtenidas,
-          );
+  const recargarDatos =
+    useCallback(async () => {
+      try {
+        setCargando(true);
+        setErrorCarga(null);
 
-          setErrorCarga(null);
-        },
-      )
-      .catch((error: unknown) => {
-        if (!componenteActivo) {
-          return;
-        }
-
+        aplicarDatos(
+          await obtenerDatos(),
+        );
+      } catch (error: unknown) {
         setErrorCarga(
           obtenerMensajeError(error),
         );
+      } finally {
+        setCargando(false);
+      }
+    }, [aplicarDatos, obtenerDatos]);
+
+  useEffect(() => {
+    let activo = true;
+
+    obtenerDatos()
+      .then((datos) => {
+        if (!activo) {
+          return;
+        }
+
+        aplicarDatos(datos);
+        setErrorCarga(null);
+      })
+      .catch((error: unknown) => {
+        if (activo) {
+          setErrorCarga(
+            obtenerMensajeError(error),
+          );
+        }
       })
       .finally(() => {
-        if (componenteActivo) {
+        if (activo) {
           setCargando(false);
         }
       });
 
     return () => {
-      componenteActivo = false;
+      activo = false;
     };
-  }, []);
+  }, [aplicarDatos, obtenerDatos]);
 
-  async function recargarDatos() {
-    const [
-      productosObtenidos,
-      categoriasObtenidas,
-    ] = await Promise.all([
-      listarProductos(),
-      listarCategorias(),
-    ]);
-
-    setProductos(productosObtenidos);
-    setCategorias(categoriasObtenidas);
-    setErrorCarga(null);
-  }
-
-  async function reintentarCarga() {
-    setCargando(true);
-    setErrorCarga(null);
-
-    try {
-      await recargarDatos();
-    } catch (error: unknown) {
-      setErrorCarga(
-        obtenerMensajeError(error),
-      );
-    } finally {
-      setCargando(false);
-    }
-  }
-
-  const categoriasPorId =
-    useMemo(() => {
-      return new Map(
+  const mapaCategorias = useMemo(
+    () =>
+      new Map(
         categorias.map((categoria) => [
           categoria.id,
           categoria,
         ]),
+      ),
+    [categorias],
+  );
+
+  const mapaInventario = useMemo(
+    () =>
+      new Map(
+        estadosInventario.map((estado) => [
+          estado.productoId,
+          estado,
+        ]),
+      ),
+    [estadosInventario],
+  );
+
+  const productosFiltrados = useMemo(() => {
+    const texto = busqueda
+      .trim()
+      .toLocaleLowerCase("es");
+
+    return productos.filter((producto) => {
+      const categoria =
+        mapaCategorias.get(
+          producto.categoriaId,
+        );
+
+      const inventario =
+        mapaInventario.get(producto.id)
+          ?.estado ??
+        (producto.controlInventario ===
+        "No controla inventario"
+          ? "No controla inventario"
+          : "Sin receta");
+
+      const coincideTexto =
+        !texto ||
+        producto.codigo
+          .toLocaleLowerCase("es")
+          .includes(texto) ||
+        producto.nombre
+          .toLocaleLowerCase("es")
+          .includes(texto) ||
+        producto.descripcion
+          .toLocaleLowerCase("es")
+          .includes(texto) ||
+        categoria?.nombre
+          .toLocaleLowerCase("es")
+          .includes(texto);
+
+      const coincideCategoria =
+        filtroCategoria === "Todas" ||
+        producto.categoriaId ===
+          Number(filtroCategoria);
+
+      const coincideEstado =
+        filtroEstado === "Todos" ||
+        producto.estado === filtroEstado;
+
+      const coincideInventario =
+        filtroInventario === "Todos" ||
+        inventario === filtroInventario;
+
+      return (
+        coincideTexto &&
+        coincideCategoria &&
+        coincideEstado &&
+        coincideInventario
       );
-    }, [categorias]);
-
-  const categoriasActivas =
-    useMemo(() => {
-      return categorias.filter(
-        (categoria) =>
-          categoria.estado === "Activo",
-      );
-    }, [categorias]);
-
-  const productosFiltrados =
-    useMemo(() => {
-      const textoBusqueda =
-        busqueda
-          .trim()
-          .toLocaleLowerCase("es");
-
-      return productos.filter(
-        (producto) => {
-          const categoria =
-            categoriasPorId.get(
-              producto.categoriaId,
-            );
-
-          const coincideBusqueda =
-            !textoBusqueda ||
-            producto.codigo
-              .toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            producto.nombre
-              .toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            producto.descripcion
-              .toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            categoria?.nombre
-              .toLocaleLowerCase("es")
-              .includes(textoBusqueda);
-
-          const coincideCategoria =
-            filtroCategoria === "Todas" ||
-            producto.categoriaId ===
-              Number(filtroCategoria);
-
-          const coincideEstado =
-            filtroEstado === "Todos" ||
-            producto.estado ===
-              filtroEstado;
-
-          const coincideDisponibilidad =
-            filtroDisponibilidad ===
-              "Todas" ||
-            (
-              filtroDisponibilidad ===
-              "Disponible" &&
-              producto.disponible
-            ) ||
-            (
-              filtroDisponibilidad ===
-              "No disponible" &&
-              !producto.disponible
-            );
-
-          return (
-            coincideBusqueda &&
-            coincideCategoria &&
-            coincideEstado &&
-            coincideDisponibilidad
-          );
-        },
-      );
-    }, [
-      productos,
-      categoriasPorId,
-      busqueda,
-      filtroCategoria,
-      filtroEstado,
-      filtroDisponibilidad,
-    ]);
+    });
+  }, [
+    busqueda,
+    filtroCategoria,
+    filtroEstado,
+    filtroInventario,
+    mapaCategorias,
+    mapaInventario,
+    productos,
+  ]);
 
   const totalPaginas = Math.max(
     1,
@@ -375,233 +392,222 @@ function GestionProductos({
     totalPaginas,
   );
 
-  const productosPagina =
-    useMemo(() => {
-      const inicio =
-        (paginaSegura - 1) *
-        PRODUCTOS_POR_PAGINA;
+  const productosPagina = useMemo(() => {
+    const inicio =
+      (paginaSegura - 1) *
+      PRODUCTOS_POR_PAGINA;
 
-      return productosFiltrados.slice(
-        inicio,
-        inicio +
-          PRODUCTOS_POR_PAGINA,
-      );
-    }, [
-      productosFiltrados,
-      paginaSegura,
-    ]);
+    return productosFiltrados.slice(
+      inicio,
+      inicio + PRODUCTOS_POR_PAGINA,
+    );
+  }, [productosFiltrados, paginaSegura]);
 
-  const totalActivos =
-    productos.filter(
-      (producto) =>
-        producto.estado === "Activo",
+  const productosActivos = productos.filter(
+    (producto) =>
+      producto.estado === "Activo",
+  ).length;
+
+  const productosSinReceta =
+    estadosInventario.filter(
+      (estado) =>
+        estado.estado === "Sin receta",
     ).length;
 
-  const totalDisponibles =
-    productos.filter(
-      (producto) =>
-        producto.estado === "Activo" &&
-        producto.disponible,
-    ).length;
-
-  const totalNoDisponibles =
-    productos.filter(
-      (producto) =>
-        producto.estado === "Activo" &&
-        !producto.disponible,
-    ).length;
-
-  const totalDestacados =
-    productos.filter(
-      (producto) =>
-        producto.estado === "Activo" &&
-        producto.destacado,
-    ).length;
+  const categoriasActivas = categorias.filter(
+    (categoria) =>
+      categoria.estado === "Activo",
+  ).length;
 
   const filtrosActivos =
     Boolean(busqueda) ||
     filtroCategoria !== "Todas" ||
     filtroEstado !== "Todos" ||
-    filtroDisponibilidad !== "Todas";
+    filtroInventario !== "Todos";
 
   function limpiarFiltros() {
     setBusqueda("");
     setFiltroCategoria("Todas");
     setFiltroEstado("Todos");
-    setFiltroDisponibilidad("Todas");
+    setFiltroInventario("Todos");
     setPaginaActual(1);
   }
 
   function abrirNuevoProducto() {
-    if (
-      !puedeGestionar ||
-      categoriasActivas.length === 0
-    ) {
+    if (!puedeGestionar) {
       return;
     }
 
-    setProductoEnEdicion(null);
-    setModalFormularioAbierto(true);
+    setProductoEdicion(null);
+    setRecetaEdicion(null);
+    setModalProducto(true);
   }
 
-  function abrirEdicionProducto(
+  async function abrirEdicionProducto(
     producto: ProductoMenu,
   ) {
     if (!puedeGestionar) {
       return;
     }
 
-    setProductoEnEdicion(producto);
-    setModalFormularioAbierto(true);
-  }
-
-  function cerrarFormulario() {
-    if (guardando) {
-      return;
-    }
-
-    setModalFormularioAbierto(false);
-    setProductoEnEdicion(null);
-  }
-
-  async function guardarProducto(
-    datos: CrearProductoDto,
-  ) {
-    if (!puedeGestionar) {
-      return;
-    }
-
-    setGuardando(true);
-
     try {
-      if (productoEnEdicion) {
-        const productoActualizado =
-          await actualizarProducto(
-            productoEnEdicion.id,
-            datos,
-          );
+      setCargandoEdicion(true);
 
-        await auditarAccion({
-          modulo: "Productos",
-          accion: "Actualizar producto",
-          entidad: "Producto",
-          entidadId:
-            productoActualizado.id,
-          descripcion:
-            `Se actualizó el producto ${productoActualizado.nombre}.`,
-          datosAnteriores:
-            productoEnEdicion,
-          datosPosteriores:
-            productoActualizado,
-        });
+      const receta =
+        producto.controlInventario ===
+        "Con receta"
+          ? await obtenerRecetaVigenteProducto(
+              producto.id,
+            )
+          : null;
 
-        setNotificacion({
-          tipo: "exito",
-          titulo:
-            "Producto actualizado",
-          mensaje:
-            "Los cambios del producto fueron guardados correctamente.",
-        });
-      } else {
-        const productoCreado =
-          await crearProducto(datos);
-
-        await auditarAccion({
-          modulo: "Productos",
-          accion: "Crear producto",
-          entidad: "Producto",
-          entidadId:
-            productoCreado.id,
-          descripcion:
-            `Se registró el producto ${productoCreado.nombre}.`,
-          datosPosteriores:
-            productoCreado,
-        });
-
-        setNotificacion({
-          tipo: "exito",
-          titulo:
-            "Producto registrado",
-          mensaje:
-            "El nuevo producto ya forma parte del catálogo.",
-        });
-      }
-
-      await recargarDatos();
-
-      setModalFormularioAbierto(false);
-      setProductoEnEdicion(null);
+      setProductoEdicion(producto);
+      setRecetaEdicion(receta);
+      setModalProducto(true);
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
         titulo:
-          "No se pudo guardar",
+          "No se pudo abrir el producto",
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    } finally {
+      setCargandoEdicion(false);
+    }
+  }
+
+  function cerrarProducto() {
+    if (guardando) {
+      return;
+    }
+
+    setModalProducto(false);
+    setProductoEdicion(null);
+    setRecetaEdicion(null);
+  }
+
+  async function guardarProducto(
+    datos:
+      DatosFormularioProductoIntegrado,
+  ) {
+    if (
+      !puedeGestionar ||
+      !usuario
+    ) {
+      return;
+    }
+
+    try {
+      setGuardando(true);
+
+      if (productoEdicion) {
+        const resultado =
+          await actualizarProductoConInventario(
+            productoEdicion.id,
+            {
+              codigo: datos.codigo,
+              nombre: datos.nombre,
+              descripcion:
+                datos.descripcion,
+              categoriaId:
+                datos.categoriaId,
+              precio: datos.precio,
+              disponible:
+                productoEdicion.estado ===
+                "Activo",
+              destacado:
+                productoEdicion.estado ===
+                "Activo"
+                  ? datos.destacado
+                  : false,
+              controlInventario:
+                datos.controlInventario,
+              imagenUrl: datos.imagenUrl,
+              ingredientes:
+                datos.ingredientes,
+            },
+            usuario,
+          );
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Actualizar producto y receta",
+          entidad: "Producto",
+          entidadId:
+            resultado.producto.id,
+          descripcion:
+            `Se actualizó ${resultado.producto.nombre} y su configuración de inventario.`,
+          datosAnteriores: {
+            producto: productoEdicion,
+            receta: recetaEdicion,
+          },
+          datosPosteriores: resultado,
+        });
+
+        setNotificacion({
+          tipo: "exito",
+          titulo: "Producto actualizado",
+          mensaje:
+            "La información comercial y el control de inventario fueron guardados.",
+        });
+      } else {
+        const resultado =
+          await crearProductoConInventario(
+            {
+              codigo: datos.codigo,
+              nombre: datos.nombre,
+              descripcion:
+                datos.descripcion,
+              categoriaId:
+                datos.categoriaId,
+              precio: datos.precio,
+              disponible: true,
+              destacado: datos.destacado,
+              controlInventario:
+                datos.controlInventario,
+              imagenUrl: datos.imagenUrl,
+              ingredientes:
+                datos.ingredientes ?? [],
+            },
+            usuario,
+          );
+
+        await auditarAccion({
+          modulo: "Productos",
+          accion: "Crear producto y receta",
+          entidad: "Producto",
+          entidadId:
+            resultado.producto.id,
+          descripcion:
+            `Se registró ${resultado.producto.nombre} con su configuración de inventario.`,
+          datosPosteriores: resultado,
+        });
+
+        setNotificacion({
+          tipo: "exito",
+          titulo: "Producto registrado",
+          mensaje:
+            resultado.receta
+              ? "El producto y su receta ya están disponibles."
+              : "El producto fue registrado sin control de inventario.",
+        });
+      }
+
+      setModalProducto(false);
+      setProductoEdicion(null);
+      setRecetaEdicion(null);
+
+      await recargarDatos();
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+        titulo: "No se pudo guardar",
         mensaje:
           obtenerMensajeError(error),
       });
     } finally {
       setGuardando(false);
-    }
-  }
-
-  async function cambiarDisponibilidad(
-    producto: ProductoMenu,
-  ) {
-    if (
-      !puedeGestionar ||
-      producto.estado === "Inactivo"
-    ) {
-      return;
-    }
-
-    setProductoProcesandoId(
-      producto.id,
-    );
-
-    try {
-      const nuevaDisponibilidad =
-        !producto.disponible;
-
-      const productoActualizado =
-        await cambiarDisponibilidadProducto(
-          producto.id,
-          nuevaDisponibilidad,
-        );
-
-      await auditarAccion({
-        modulo: "Productos",
-        accion: "Cambiar disponibilidad",
-        entidad: "Producto",
-        entidadId:
-          productoActualizado.id,
-        descripcion:
-          `${productoActualizado.nombre} quedó ${nuevaDisponibilidad ? "disponible" : "no disponible"}.`,
-        datosAnteriores: producto,
-        datosPosteriores:
-          productoActualizado,
-      });
-
-      await recargarDatos();
-
-      setNotificacion({
-        tipo: "exito",
-        titulo: nuevaDisponibilidad
-          ? "Producto disponible"
-          : "Producto no disponible",
-        mensaje: nuevaDisponibilidad
-          ? "El producto puede seleccionarse nuevamente en los pedidos."
-          : "El producto dejó de estar disponible temporalmente.",
-      });
-    } catch (error: unknown) {
-      setNotificacion({
-        tipo: "error",
-        titulo:
-          "No se pudo cambiar la disponibilidad",
-        mensaje:
-          obtenerMensajeError(error),
-      });
-    } finally {
-      setProductoProcesandoId(null);
     }
   }
 
@@ -615,74 +621,52 @@ function GestionProductos({
       return;
     }
 
-    setProductoProcesandoId(
-      producto.id,
-    );
-
     try {
-      const nuevoDestacado =
-        !producto.destacado;
+      setProductoProcesandoId(
+        producto.id,
+      );
 
-      const productoActualizado =
+      const actualizado =
         await cambiarProductoDestacado(
           producto.id,
-          nuevoDestacado,
+          !producto.destacado,
         );
 
       await auditarAccion({
         modulo: "Productos",
-        accion: "Cambiar destacado",
+        accion: actualizado.destacado
+          ? "Destacar producto"
+          : "Quitar producto destacado",
         entidad: "Producto",
-        entidadId:
-          productoActualizado.id,
+        entidadId: actualizado.id,
         descripcion:
-          `${productoActualizado.nombre} ${nuevoDestacado ? "fue marcado" : "dejó de estar marcado"} como destacado.`,
+          `${actualizado.nombre} ${
+            actualizado.destacado
+              ? "fue destacado"
+              : "dejó de estar destacado"
+          } en el menú.`,
         datosAnteriores: producto,
-        datosPosteriores:
-          productoActualizado,
+        datosPosteriores: actualizado,
       });
 
-      await recargarDatos();
-
-      setNotificacion({
-        tipo: "exito",
-        titulo: nuevoDestacado
-          ? "Producto destacado"
-          : "Producto sin destacar",
-        mensaje: nuevoDestacado
-          ? "El producto tendrá prioridad en futuras pantallas de pedidos."
-          : "El producto dejó de estar marcado como destacado.",
-      });
+      setProductos((actuales) =>
+        actuales.map((actual) =>
+          actual.id === actualizado.id
+            ? actualizado
+            : actual,
+        ),
+      );
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
         titulo:
-          "No se pudo actualizar el producto",
+          "No se pudo actualizar",
         mensaje:
           obtenerMensajeError(error),
       });
     } finally {
       setProductoProcesandoId(null);
     }
-  }
-
-  function solicitarCambioEstado(
-    producto: ProductoMenu,
-  ) {
-    if (!puedeGestionar) {
-      return;
-    }
-
-    const nuevoEstado:
-      EstadoCatalogo =
-      producto.estado === "Activo"
-        ? "Inactivo"
-        : "Activo";
-
-    setAccionEstado({
-      producto,
-      nuevoEstado,
-    });
   }
 
   async function confirmarCambioEstado() {
@@ -693,10 +677,10 @@ function GestionProductos({
       return;
     }
 
-    setCambiandoEstado(true);
-
     try {
-      const productoActualizado =
+      setProcesandoEstado(true);
+
+      const actualizado =
         await cambiarEstadoProducto(
           accionEstado.producto.id,
           accionEstado.nuevoEstado,
@@ -705,41 +689,28 @@ function GestionProductos({
       await auditarAccion({
         modulo: "Productos",
         accion:
-          accionEstado.nuevoEstado === "Activo"
+          accionEstado.nuevoEstado ===
+          "Activo"
             ? "Activar producto"
             : "Desactivar producto",
         entidad: "Producto",
-        entidadId:
-          productoActualizado.id,
+        entidadId: actualizado.id,
         descripcion:
-          `${productoActualizado.nombre} fue ${accionEstado.nuevoEstado === "Activo" ? "activado" : "desactivado"}.`,
+          `${actualizado.nombre} cambió a estado ${actualizado.estado}.`,
         datosAnteriores:
           accionEstado.producto,
-        datosPosteriores:
-          productoActualizado,
-        nivel:
-          accionEstado.nuevoEstado === "Inactivo"
-            ? "Advertencia"
-            : "Información",
+        datosPosteriores: actualizado,
       });
-
-      await recargarDatos();
-
-      const seActivo =
-        accionEstado.nuevoEstado ===
-        "Activo";
 
       setNotificacion({
         tipo: "exito",
-        titulo: seActivo
-          ? "Producto activado"
-          : "Producto desactivado",
-        mensaje: seActivo
-          ? "El producto volvió a formar parte del catálogo activo."
-          : "El producto fue desactivado sin eliminar su información histórica.",
+        titulo: "Estado actualizado",
+        mensaje:
+          `El producto quedó ${actualizado.estado.toLocaleLowerCase("es")}.`,
       });
 
       setAccionEstado(null);
+      await recargarDatos();
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
@@ -749,1175 +720,592 @@ function GestionProductos({
           obtenerMensajeError(error),
       });
     } finally {
-      setCambiandoEstado(false);
+      setProcesandoEstado(false);
     }
-  }
-
-  if (cargando) {
-    return (
-      <div
-        className="
-          flex min-h-96
-          items-center justify-center
-          rounded-3xl
-          border border-slate-200
-          bg-white
-        "
-      >
-        <div className="text-center">
-          <LoaderCircle
-            size={36}
-            className="
-              mx-auto animate-spin
-              text-red-700
-            "
-          />
-
-          <p
-            className="
-              mt-4 text-sm font-bold
-              text-slate-700
-            "
-          >
-            Cargando productos...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (errorCarga) {
-    return (
-      <div
-        className="
-          rounded-3xl
-          border border-red-200
-          bg-red-50 p-8
-          text-center
-        "
-      >
-        <AlertTriangle
-          size={40}
-          className="
-            mx-auto text-red-600
-          "
-        />
-
-        <h2
-          className="
-            mt-4 text-xl font-black
-            text-red-900
-          "
-        >
-          No se pudieron cargar los
-          productos
-        </h2>
-
-        <p
-          className="
-            mx-auto mt-2 max-w-lg
-            text-sm leading-relaxed
-            text-red-700
-          "
-        >
-          {errorCarga}
-        </p>
-
-        <button
-          type="button"
-          onClick={() =>
-            void reintentarCarga()
-          }
-          className="
-            mt-5 inline-flex
-            items-center gap-2
-            rounded-xl bg-red-700
-            px-5 py-3
-            text-sm font-bold
-            text-white
-            hover:bg-red-800
-          "
-        >
-          <RotateCcw size={18} />
-          Reintentar
-        </button>
-      </div>
-    );
   }
 
   return (
     <>
-      <section className="space-y-6">
-        <div
-          className="
-            grid grid-cols-1 gap-5
-            sm:grid-cols-2 xl:grid-cols-4
-          "
-        >
-          <TarjetaMetrica
-            titulo="Productos registrados"
-            valor={String(
-              productos.length,
-            )}
-            descripcion={`${totalActivos} productos activos`}
-            icono={Package}
-            tono="azul"
-          />
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TarjetaMetrica
+          titulo="Productos registrados"
+          valor={String(productos.length)}
+          descripcion="Catálogo comercial completo."
+          icono={Boxes}
+          tono="neutro"
+          variante="compacta"
+        />
 
-          <TarjetaMetrica
-            titulo="Disponibles"
-            valor={String(
-              totalDisponibles,
-            )}
-            descripcion="Habilitados para pedidos"
-            icono={PackageCheck}
-            tono="verde"
-          />
+        <TarjetaMetrica
+          titulo="Productos activos"
+          valor={String(productosActivos)}
+          descripcion="Habilitados para nuevas ventas."
+          icono={CirclePower}
+          tono="verde"
+          variante="compacta"
+        />
 
-          <TarjetaMetrica
-            titulo="No disponibles"
-            valor={String(
-              totalNoDisponibles,
-            )}
-            descripcion="Temporalmente fuera del menú"
-            icono={PackageX}
-            tono="ambar"
-          />
+        <TarjetaMetrica
+          titulo="Categorías activas"
+          valor={String(categoriasActivas)}
+          descripcion="Organización actual del menú."
+          icono={Tags}
+          tono="azul"
+          variante="compacta"
+        />
 
-          <TarjetaMetrica
-            titulo="Destacados"
-            valor={String(
-              totalDestacados,
-            )}
-            descripcion="Productos con prioridad"
-            icono={Sparkles}
-            tono="roma"
-          />
-        </div>
+        <TarjetaMetrica
+          titulo="Productos sin receta"
+          valor={String(productosSinReceta)}
+          descripcion="Requieren configurar inventario."
+          icono={ChefHat}
+          tono="ambar"
+          variante="compacta"
+        />
+      </section>
 
-        <section
-          className="
-            overflow-hidden
-            rounded-3xl
-            border border-slate-200
-            bg-white shadow-panel
-          "
-        >
-          <div
-            className="
-              flex flex-col gap-4
-              border-b border-slate-100
-              p-5 sm:p-6
-              lg:flex-row
-              lg:items-center
-              lg:justify-between
-            "
-          >
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <header className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300">
+              <Boxes size={22} />
+            </div>
+
             <div>
-              <h2
-                className="
-                  text-xl font-black
-                  text-slate-900
-                "
-              >
-                Catálogo de productos
+              <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                Productos del menú
               </h2>
-
-              <p
-                className="
-                  mt-1 text-sm
-                  text-slate-500
-                "
-              >
-                Consulta y administra los
-                productos ofrecidos por
-                Roma Fast Food.
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                Información comercial y receta en una sola gestión.
               </p>
             </div>
-
-            {puedeGestionar && (
-              <button
-                type="button"
-                disabled={
-                  categoriasActivas.length ===
-                  0
-                }
-                title={
-                  categoriasActivas.length ===
-                  0
-                    ? "Registre o active una categoría antes de crear productos"
-                    : "Registrar producto"
-                }
-                onClick={
-                  abrirNuevoProducto
-                }
-                className="
-                  inline-flex items-center
-                  justify-center gap-2
-                  rounded-xl bg-red-700
-                  px-5 py-3
-                  text-sm font-bold
-                  text-white
-                  transition-colors
-                  hover:bg-red-800
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
-                "
-              >
-                <Plus size={19} />
-                Nuevo producto
-              </button>
-            )}
           </div>
 
-          <div
-            className="
-              grid gap-3
-              border-b border-slate-100
-              bg-slate-50/70 p-5
-              xl:grid-cols-[1fr_220px_190px_210px_auto]
-            "
-          >
-            <div className="relative">
-              <Search
-                size={19}
-                className="
-                  pointer-events-none
-                  absolute left-4 top-1/2
-                  -translate-y-1/2
-                  text-slate-400
-                "
-              />
+          {puedeGestionar && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setModalCategorias(true)
+                }
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Tags size={18} />
+                Gestionar categorías
+              </button>
 
-              <input
-                type="search"
-                value={busqueda}
-                placeholder="Buscar por código, nombre o categoría..."
-                onChange={(evento) => {
-                  setBusqueda(
-                    evento.target.value,
-                  );
-
-                  setPaginaActual(1);
-                }}
-                className="
-                  h-12 w-full
-                  rounded-xl border
-                  border-slate-300
-                  bg-white pl-11 pr-4
-                  text-sm outline-none
-                  transition
-                  placeholder:text-slate-400
-                  focus:border-red-600
-                  focus:ring-4
-                  focus:ring-red-100
-                "
-              />
+              <button
+                type="button"
+                onClick={abrirNuevoProducto}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-red-700"
+              >
+                <PackagePlus size={18} />
+                Nuevo producto
+              </button>
             </div>
+          )}
+        </header>
 
-            <select
-              value={filtroCategoria}
+        <div className="grid gap-3 border-b border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.05fr)_minmax(220px,.92fr)_minmax(190px,.78fr)_minmax(230px,.95fr)_48px] dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="relative">
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <input
+              type="search"
+              value={busqueda}
+              placeholder="Código, producto, descripción o categoría"
               onChange={(evento) => {
-                setFiltroCategoria(
+                setBusqueda(
                   evento.target.value,
                 );
-
                 setPaginaActual(1);
               }}
-              className="
-                h-12 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-semibold
-                text-slate-700
-                outline-none
-                focus:border-red-600
-                focus:ring-4
-                focus:ring-red-100
-              "
-            >
-              <option value="Todas">
-                Todas las categorías
+              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:ring-red-950/50"
+            />
+          </div>
+
+          <select
+            value={filtroCategoria}
+            onChange={(evento) => {
+              setFiltroCategoria(
+                evento.target.value,
+              );
+              setPaginaActual(1);
+            }}
+            className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+          >
+            <option value="Todas">
+              Todas las categorías
+            </option>
+
+            {categorias.map((categoria) => (
+              <option
+                key={categoria.id}
+                value={categoria.id}
+              >
+                {categoria.nombre}
               </option>
+            ))}
+          </select>
 
-              {categorias.map(
-                (categoria) => (
-                  <option
-                    key={categoria.id}
-                    value={categoria.id}
-                  >
-                    {categoria.nombre}
-                  </option>
-                ),
-              )}
-            </select>
+          <select
+            value={filtroEstado}
+            onChange={(evento) => {
+              setFiltroEstado(
+                evento.target.value as
+                  | "Todos"
+                  | EstadoCatalogo,
+              );
+              setPaginaActual(1);
+            }}
+            className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+          >
+            <option value="Todos">
+              Todos los estados
+            </option>
+            <option value="Activo">
+              Activos
+            </option>
+            <option value="Inactivo">
+              Inactivos
+            </option>
+          </select>
 
-            <select
-              value={filtroEstado}
-              onChange={(evento) => {
-                setFiltroEstado(
-                  evento.target
-                    .value as FiltroEstadoProducto,
-                );
+          <select
+            value={filtroInventario}
+            onChange={(evento) => {
+              setFiltroInventario(
+                evento.target.value as
+                  FiltroInventario,
+              );
+              setPaginaActual(1);
+            }}
+            className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+          >
+            <option value="Todos">
+              Todo inventario
+            </option>
+            <option value="Receta configurada">
+              Receta configurada
+            </option>
+            <option value="Sin receta">
+              Sin receta
+            </option>
+            <option value="No controla inventario">
+              No controla inventario
+            </option>
+          </select>
 
-                setPaginaActual(1);
-              }}
-              className="
-                h-12 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-semibold
-                text-slate-700
-                outline-none
-                focus:border-red-600
-                focus:ring-4
-                focus:ring-red-100
-              "
-            >
-              <option value="Todos">
-                Todos los estados
-              </option>
+          <button
+            type="button"
+            disabled={!filtrosActivos}
+            onClick={limpiarFiltros}
+            aria-label="Limpiar filtros"
+            title="Limpiar filtros"
+            className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+          >
+            <RotateCcw size={18} />
+          </button>
+        </div>
 
-              <option value="Activo">
-                Activos
-              </option>
+        <div className="hidden grid-cols-[minmax(270px,1.55fr)_minmax(120px,.7fr)_110px_minmax(170px,.9fr)_100px_140px] gap-4 border-b border-slate-200 bg-white px-5 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 xl:grid">
+          <span>Producto</span>
+          <span>Categoría</span>
+          <span>Precio</span>
+          <span>Inventario</span>
+          <span>Estado</span>
+          <span className="text-right">
+            Acciones
+          </span>
+        </div>
 
-              <option value="Inactivo">
-                Inactivos
-              </option>
-            </select>
-
-            <select
-              value={
-                filtroDisponibilidad
-              }
-              onChange={(evento) => {
-                setFiltroDisponibilidad(
-                  evento.target
-                    .value as FiltroDisponibilidad,
-                );
-
-                setPaginaActual(1);
-              }}
-              className="
-                h-12 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-semibold
-                text-slate-700
-                outline-none
-                focus:border-red-600
-                focus:ring-4
-                focus:ring-red-100
-              "
-            >
-              <option value="Todas">
-                Toda disponibilidad
-              </option>
-
-              <option value="Disponible">
-                Disponibles
-              </option>
-
-              <option value="No disponible">
-                No disponibles
-              </option>
-            </select>
+        {cargando ? (
+          <div className="flex min-h-80 items-center justify-center gap-3 text-sm font-bold text-slate-500 dark:text-slate-400">
+            <LoaderCircle
+              size={24}
+              className="animate-spin"
+            />
+            Cargando productos...
+          </div>
+        ) : errorCarga ? (
+          <div className="flex min-h-80 flex-col items-center justify-center gap-4 p-6 text-center">
+            <p className="max-w-md text-sm font-bold text-red-600 dark:text-red-400">
+              {errorCarga}
+            </p>
 
             <button
               type="button"
-              disabled={!filtrosActivos}
-              onClick={limpiarFiltros}
-              className="
-                inline-flex h-12
-                items-center justify-center
-                gap-2 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-bold
-                text-slate-700
-                transition-colors
-                hover:bg-slate-100
-                disabled:cursor-not-allowed
-                disabled:opacity-40
-              "
+              onClick={() =>
+                void recargarDatos()
+              }
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <RotateCcw size={17} />
-              Limpiar
+              Reintentar
             </button>
           </div>
+        ) : productosPagina.length === 0 ? (
+          <div className="flex min-h-80 flex-col items-center justify-center p-6 text-center">
+            <Boxes
+              size={38}
+              className="text-slate-300 dark:text-slate-700"
+            />
 
-          <div
-            className="
-              border-b border-slate-100
-              px-5 py-4
-              text-sm text-slate-500
-            "
-          >
-            Se encontraron{" "}
-            <strong
-              className="
-                text-slate-800
-              "
-            >
-              {
-                productosFiltrados.length
-              }
-            </strong>{" "}
-            productos.
-          </div>
-
-          {productosPagina.length ===
-          0 ? (
-            <div
-              className="
-                flex min-h-80
-                flex-col items-center
-                justify-center
-                px-6 py-12
-                text-center
-              "
-            >
-              <div
-                className="
-                  flex h-16 w-16
-                  items-center
-                  justify-center
-                  rounded-2xl
-                  bg-slate-100
-                  text-slate-400
-                "
-              >
-                <Search size={29} />
-              </div>
-
-              <h3
-                className="
-                  mt-5 text-lg
-                  font-black
-                  text-slate-900
-                "
-              >
-                No se encontraron
-                productos
-              </h3>
-
-              <p
-                className="
-                  mt-2 max-w-md
-                  text-sm leading-relaxed
-                  text-slate-500
-                "
-              >
-                Modifica los criterios de
-                búsqueda o registra un
-                nuevo producto.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table
-                className="
-                  w-full min-w-275
-                "
-              >
-                <thead>
-                  <tr
-                    className="
-                      bg-slate-50
-                      text-left
-                    "
-                  >
-                    <th
-                      className="
-                        px-5 py-4
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Producto
-                    </th>
-
-                    <th
-                      className="
-                        px-5 py-4
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Categoría
-                    </th>
-
-                    <th
-                      className="
-                        px-5 py-4
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Precio
-                    </th>
-
-                    <th
-                      className="
-                        px-5 py-4
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Disponibilidad
-                    </th>
-
-                    <th
-                      className="
-                        px-5 py-4
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Estado
-                    </th>
-
-                    <th
-                      className="
-                        px-5 py-4
-                        text-right
-                        text-xs font-bold
-                        uppercase
-                        tracking-wider
-                        text-slate-500
-                      "
-                    >
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody
-                  className="
-                    divide-y
-                    divide-slate-100
-                  "
-                >
-                  {productosPagina.map(
-                    (producto) => {
-                      const categoria =
-                        categoriasPorId.get(
-                          producto.categoriaId,
-                        );
-
-                      const procesando =
-                        productoProcesandoId ===
-                        producto.id;
-
-                      return (
-                        <tr
-                          key={producto.id}
-                          className="
-                            transition-colors
-                            hover:bg-slate-50/70
-                          "
-                        >
-                          <td className="px-5 py-4">
-                            <div
-                              className="
-                                flex items-center
-                                gap-4
-                              "
-                            >
-                              <div
-                                className="
-                                  relative flex
-                                  h-14 w-14
-                                  shrink-0
-                                  items-center
-                                  justify-center
-                                  overflow-hidden
-                                  rounded-2xl
-                                  bg-slate-100
-                                  text-slate-400
-                                "
-                              >
-                                <ImageOff
-                                  size={22}
-                                />
-
-                                {producto.imagenUrl && (
-                                  <img
-                                    src={
-                                      producto.imagenUrl
-                                    }
-                                    alt={
-                                      producto.nombre
-                                    }
-                                    className="
-                                      absolute inset-0
-                                      h-full w-full
-                                      object-cover
-                                    "
-                                    onError={(
-                                      evento,
-                                    ) => {
-                                      evento.currentTarget.style.display =
-                                        "none";
-                                    }}
-                                  />
-                                )}
-                              </div>
-
-                              <div>
-                                <div
-                                  className="
-                                    flex flex-wrap
-                                    items-center
-                                    gap-2
-                                  "
-                                >
-                                  <p
-                                    className="
-                                      font-bold
-                                      text-slate-900
-                                    "
-                                  >
-                                    {
-                                      producto.nombre
-                                    }
-                                  </p>
-
-                                  {producto.destacado && (
-                                    <span
-                                      title="Producto destacado"
-                                      className="
-                                        inline-flex
-                                        items-center
-                                        gap-1 rounded-full
-                                        bg-amber-100
-                                        px-2 py-0.5
-                                        text-[10px]
-                                        font-bold
-                                        text-amber-700
-                                      "
-                                    >
-                                      <Star
-                                        size={
-                                          11
-                                        }
-                                        fill="currentColor"
-                                      />
-                                      Destacado
-                                    </span>
-                                  )}
-                                </div>
-
-                                <p
-                                  className="
-                                    mt-1 text-xs
-                                    font-bold
-                                    uppercase
-                                    tracking-wide
-                                    text-red-700
-                                  "
-                                >
-                                  {
-                                    producto.codigo
-                                  }
-                                </p>
-
-                                <p
-                                  className="
-                                    mt-1 max-w-sm
-                                    text-xs
-                                    leading-relaxed
-                                    text-slate-500
-                                  "
-                                >
-                                  {
-                                    producto.descripcion
-                                  }
-                                </p>
-
-                                <p
-                                  className="
-                                    mt-1 text-[11px]
-                                    text-slate-400
-                                  "
-                                >
-                                  Actualizado:{" "}
-                                  {formatearFecha(
-                                    producto.fechaActualizacion,
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-5 py-4">
-                            <span
-                              className="
-                                inline-flex
-                                rounded-full
-                                bg-blue-50
-                                px-3 py-1
-                                text-xs font-bold
-                                text-blue-700
-                              "
-                            >
-                              {categoria?.nombre ??
-                                "Sin categoría"}
-                            </span>
-                          </td>
-
-                          <td className="px-5 py-4">
-                            <div
-                              className="
-                                flex items-center
-                                gap-2
-                              "
-                            >
-                              <CircleDollarSign
-                                size={18}
-                                className="
-                                  text-emerald-600
-                                "
-                              />
-
-                              <span
-                                className="
-                                  font-black
-                                  text-slate-900
-                                "
-                              >
-                                {formatearPrecio(
-                                  producto.precio,
-                                )}
-                              </span>
-                            </div>
-                          </td>
-
-                          <td className="px-5 py-4">
-                            {puedeGestionar ? (
-                              <button
-                                type="button"
-                                disabled={
-                                  producto.estado ===
-                                    "Inactivo" ||
-                                  procesando
-                                }
-                                title={
-                                  producto.estado ===
-                                  "Inactivo"
-                                    ? "El producto está inactivo"
-                                    : producto.disponible
-                                      ? "Marcar como no disponible"
-                                      : "Marcar como disponible"
-                                }
-                                onClick={() =>
-                                  void cambiarDisponibilidad(
-                                    producto,
-                                  )
-                                }
-                                className={`
-                                  inline-flex
-                                  items-center
-                                  gap-2
-                                  rounded-xl
-                                  px-3 py-2
-                                  text-xs font-bold
-                                  transition-colors
-                                  disabled:cursor-not-allowed
-                                  disabled:opacity-40
-                                  ${
-                                    producto.disponible
-                                      ? `
-                                        bg-emerald-50
-                                        text-emerald-700
-                                        hover:bg-emerald-100
-                                      `
-                                      : `
-                                        bg-amber-50
-                                        text-amber-700
-                                        hover:bg-amber-100
-                                      `
-                                  }
-                                `}
-                              >
-                                {procesando ? (
-                                  <LoaderCircle
-                                    size={15}
-                                    className="animate-spin"
-                                  />
-                                ) : producto.disponible ? (
-                                  <PackageCheck
-                                    size={
-                                      15
-                                    }
-                                  />
-                                ) : (
-                                  <PackageX
-                                    size={
-                                      15
-                                    }
-                                  />
-                                )}
-
-                                {producto.disponible
-                                  ? "Disponible"
-                                  : "No disponible"}
-                              </button>
-                            ) : (
-                              <span
-                                className={`
-                                  inline-flex
-                                  items-center
-                                  gap-2
-                                  rounded-full
-                                  px-3 py-1
-                                  text-xs font-bold
-                                  ${
-                                    producto.disponible
-                                      ? `
-                                        bg-emerald-50
-                                        text-emerald-700
-                                      `
-                                      : `
-                                        bg-amber-50
-                                        text-amber-700
-                                      `
-                                  }
-                                `}
-                              >
-                                {producto.disponible ? (
-                                  <PackageCheck
-                                    size={
-                                      14
-                                    }
-                                  />
-                                ) : (
-                                  <PackageX
-                                    size={
-                                      14
-                                    }
-                                  />
-                                )}
-
-                                {producto.disponible
-                                  ? "Disponible"
-                                  : "No disponible"}
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="px-5 py-4">
-                            <span
-                              className={`
-                                inline-flex
-                                items-center
-                                rounded-full
-                                px-3 py-1
-                                text-xs font-bold
-                                ${
-                                  producto.estado ===
-                                  "Activo"
-                                    ? `
-                                      bg-emerald-100
-                                      text-emerald-700
-                                    `
-                                    : `
-                                      bg-slate-200
-                                      text-slate-600
-                                    `
-                                }
-                              `}
-                            >
-                              {
-                                producto.estado
-                              }
-                            </span>
-                          </td>
-
-                          <td className="px-5 py-4">
-                            {puedeGestionar ? (
-                              <div
-                                className="
-                                  flex items-center
-                                  justify-end gap-2
-                                "
-                              >
-                                <button
-                                  type="button"
-                                  title="Editar producto"
-                                  onClick={() =>
-                                    abrirEdicionProducto(
-                                      producto,
-                                    )
-                                  }
-                                  className="
-                                    rounded-xl
-                                    border
-                                    border-blue-200
-                                    bg-blue-50
-                                    p-2.5
-                                    text-blue-700
-                                    transition-colors
-                                    hover:bg-blue-100
-                                  "
-                                >
-                                  <Pencil
-                                    size={17}
-                                  />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  disabled={
-                                    producto.estado ===
-                                      "Inactivo" ||
-                                    procesando
-                                  }
-                                  title={
-                                    producto.destacado
-                                      ? "Quitar de destacados"
-                                      : "Marcar como destacado"
-                                  }
-                                  onClick={() =>
-                                    void cambiarDestacado(
-                                      producto,
-                                    )
-                                  }
-                                  className="
-                                    rounded-xl
-                                    border
-                                    border-amber-200
-                                    bg-amber-50
-                                    p-2.5
-                                    text-amber-700
-                                    transition-colors
-                                    hover:bg-amber-100
-                                    disabled:cursor-not-allowed
-                                    disabled:opacity-40
-                                  "
-                                >
-                                  {producto.destacado ? (
-                                    <StarOff
-                                      size={
-                                        17
-                                      }
-                                    />
-                                  ) : (
-                                    <Star
-                                      size={
-                                        17
-                                      }
-                                    />
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  title={
-                                    producto.estado ===
-                                    "Activo"
-                                      ? "Desactivar producto"
-                                      : "Activar producto"
-                                  }
-                                  onClick={() =>
-                                    solicitarCambioEstado(
-                                      producto,
-                                    )
-                                  }
-                                  className={`
-                                    rounded-xl
-                                    border p-2.5
-                                    transition-colors
-                                    ${
-                                      producto.estado ===
-                                      "Activo"
-                                        ? `
-                                          border-red-200
-                                          bg-red-50
-                                          text-red-700
-                                          hover:bg-red-100
-                                        `
-                                        : `
-                                          border-emerald-200
-                                          bg-emerald-50
-                                          text-emerald-700
-                                          hover:bg-emerald-100
-                                        `
-                                    }
-                                  `}
-                                >
-                                  {producto.estado ===
-                                  "Activo" ? (
-                                    <Power
-                                      size={
-                                        17
-                                      }
-                                    />
-                                  ) : (
-                                    <RotateCcw
-                                      size={
-                                        17
-                                      }
-                                    />
-                                  )}
-                                </button>
-                              </div>
-                            ) : (
-                              <p
-                                className="
-                                  text-right
-                                  text-xs font-semibold
-                                  text-slate-400
-                                "
-                              >
-                                Solo lectura
-                              </p>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    },
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div
-            className="
-              flex flex-col gap-4
-              border-t border-slate-100
-              px-5 py-4 sm:flex-row
-              sm:items-center
-              sm:justify-between
-            "
-          >
-            <p
-              className="
-                text-sm text-slate-500
-              "
-            >
-              Página{" "}
-              <strong
-                className="
-                  text-slate-800
-                "
-              >
-                {paginaSegura}
-              </strong>{" "}
-              de{" "}
-              <strong
-                className="
-                  text-slate-800
-                "
-              >
-                {totalPaginas}
-              </strong>
+            <p className="mt-3 font-black text-slate-900 dark:text-white">
+              No se encontraron productos
             </p>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={
-                  paginaSegura === 1
-                }
-                onClick={() =>
-                  setPaginaActual(
-                    (pagina) =>
-                      Math.max(
-                        1,
-                        pagina - 1,
-                      ),
-                  )
-                }
-                className="
-                  rounded-xl border
-                  border-slate-300
-                  px-4 py-2
-                  text-sm font-bold
-                  text-slate-700
-                  transition-colors
-                  hover:bg-slate-100
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
-              >
-                Anterior
-              </button>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {filtrosActivos
+                ? "No existen coincidencias con los filtros aplicados."
+                : "Todavía no existen productos registrados."}
+            </p>
 
+            {filtrosActivos && (
               <button
                 type="button"
-                disabled={
-                  paginaSegura ===
-                  totalPaginas
-                }
-                onClick={() =>
-                  setPaginaActual(
-                    (pagina) =>
-                      Math.min(
-                        totalPaginas,
-                        pagina + 1,
-                      ),
-                  )
-                }
-                className="
-                  rounded-xl border
-                  border-slate-300
-                  px-4 py-2
-                  text-sm font-bold
-                  text-slate-700
-                  transition-colors
-                  hover:bg-slate-100
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
+                onClick={limpiarFiltros}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                Siguiente
+                <RotateCcw size={17} />
+                Limpiar filtros
               </button>
-            </div>
+            )}
           </div>
-        </section>
+        ) : (
+          <div className="min-h-[34rem] divide-y divide-slate-200 dark:divide-slate-800">
+            {productosPagina.map((producto) => {
+              const categoria =
+                mapaCategorias.get(
+                  producto.categoriaId,
+                );
+
+              const estadoInventario =
+                mapaInventario.get(
+                  producto.id,
+                )?.estado ??
+                (producto.controlInventario ===
+                "No controla inventario"
+                  ? "No controla inventario"
+                  : "Sin receta");
+
+              const procesando =
+                productoProcesandoId ===
+                producto.id;
+
+              return (
+                <article
+                  key={producto.id}
+                  className="grid gap-4 px-5 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 xl:grid-cols-[minmax(270px,1.55fr)_minmax(120px,.7fr)_110px_minmax(170px,.9fr)_100px_140px] xl:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                      <ImageOff size={20} />
+
+                      {producto.imagenUrl && (
+                        <img
+                          src={producto.imagenUrl}
+                          alt={producto.nombre}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          onError={(evento) => {
+                            evento.currentTarget.style.display =
+                              "none";
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-black text-slate-900 dark:text-white">
+                          {producto.nombre}
+                        </p>
+
+                        {producto.destacado && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                            <Star
+                              size={10}
+                              fill="currentColor"
+                            />
+                            Destacado
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-0.5 text-xs font-black uppercase tracking-wide text-red-600 dark:text-red-400">
+                        {producto.codigo}
+                      </p>
+
+                      <p className="mt-1 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">
+                        {producto.descripcion}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                      {categoria?.nombre ??
+                        "Sin categoría"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <CircleDollarSign
+                      size={17}
+                      className="text-emerald-600 dark:text-emerald-400"
+                    />
+                    <span className="font-black text-slate-900 dark:text-white">
+                      {formatearPrecio(
+                        producto.precio,
+                      )}
+                    </span>
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      disabled={!puedeGestionar}
+                      onClick={() =>
+                        void abrirEdicionProducto(
+                          producto,
+                        )
+                      }
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black transition-colors ${claseInventario(
+                        estadoInventario,
+                      )} ${
+                        puedeGestionar
+                          ? "hover:brightness-95"
+                          : "cursor-default"
+                      }`}
+                    >
+                      {estadoInventario ===
+                      "Receta configurada" ? (
+                        <ChefHat size={14} />
+                      ) : estadoInventario ===
+                        "Sin receta" ? (
+                        <PackagePlus size={14} />
+                      ) : (
+                        <PackageOpen size={14} />
+                      )}
+                      {estadoInventario}
+                    </button>
+                  </div>
+
+                  <div>
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${
+                        producto.estado ===
+                        "Activo"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {producto.estado}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    {puedeGestionar && (
+                      <>
+                        <button
+                          type="button"
+                          title="Editar producto y receta"
+                          aria-label={`Editar ${producto.nombre}`}
+                          disabled={cargandoEdicion}
+                          onClick={() =>
+                            void abrirEdicionProducto(
+                              producto,
+                            )
+                          }
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                        >
+                          {cargandoEdicion ? (
+                            <LoaderCircle
+                              size={17}
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <Edit3 size={17} />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-label={
+                            producto.destacado
+                              ? `Quitar ${producto.nombre} de destacados`
+                              : `Marcar ${producto.nombre} como destacado`
+                          }
+                          title={
+                            producto.destacado
+                              ? "Quitar destacado"
+                              : "Marcar como destacado"
+                          }
+                          disabled={
+                            procesando ||
+                            producto.estado ===
+                              "Inactivo"
+                          }
+                          onClick={() =>
+                            void cambiarDestacado(
+                              producto,
+                            )
+                          }
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
+                        >
+                          {procesando ? (
+                            <LoaderCircle
+                              size={17}
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <Sparkles size={17} />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-label={
+                            producto.estado === "Activo"
+                              ? `Desactivar ${producto.nombre}`
+                              : `Activar ${producto.nombre}`
+                          }
+                          title={
+                            producto.estado ===
+                            "Activo"
+                              ? "Desactivar producto"
+                              : "Activar producto"
+                          }
+                          onClick={() =>
+                            setAccionEstado({
+                              producto,
+                              nuevoEstado:
+                                producto.estado ===
+                                "Activo"
+                                  ? "Inactivo"
+                                  : "Activo",
+                            })
+                          }
+                          className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
+                            producto.estado ===
+                            "Activo"
+                              ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+                          }`}
+                        >
+                          {producto.estado ===
+                          "Activo" ? (
+                            <Power size={17} />
+                          ) : (
+                            <CirclePower size={17} />
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <footer className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-950/60">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Mostrando {productosPagina.length} de{" "}
+            {productosFiltrados.length} productos
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={paginaSegura <= 1}
+              onClick={() =>
+                setPaginaActual((pagina) =>
+                  Math.max(1, pagina - 1),
+                )
+              }
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Anterior
+            </button>
+
+            <span className="min-w-16 text-center text-xs font-black text-slate-700 dark:text-slate-200">
+              {paginaSegura} / {totalPaginas}
+            </span>
+
+            <button
+              type="button"
+              disabled={
+                paginaSegura >= totalPaginas
+              }
+              onClick={() =>
+                setPaginaActual((pagina) =>
+                  Math.min(
+                    totalPaginas,
+                    pagina + 1,
+                  ),
+                )
+              }
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Siguiente
+            </button>
+          </div>
+        </footer>
       </section>
 
+
       <Modal
-        abierto={
-          modalFormularioAbierto
-        }
+        abierto={modalProducto}
         titulo={
-          productoEnEdicion
+          productoEdicion
             ? "Editar producto"
-            : "Registrar producto"
+            : "Nuevo producto"
         }
         descripcion={
-          productoEnEdicion
-            ? "Actualiza la información comercial del producto seleccionado."
-            : "Completa los datos necesarios para añadir un producto al menú."
+          productoEdicion
+            ? "Actualiza la información comercial y su receta sin salir de esta pantalla."
+            : "Registra la información comercial y configura el consumo de inventario en una sola operación."
         }
         ancho="grande"
-        alCerrar={cerrarFormulario}
+        alCerrar={cerrarProducto}
       >
         <FormularioProducto
           key={
-            productoEnEdicion
-              ? `editar-producto-${productoEnEdicion.id}`
+            productoEdicion
+              ? `producto-${productoEdicion.id}-${recetaEdicion?.id ?? "sin-receta"}`
               : "nuevo-producto"
           }
-          producto={productoEnEdicion}
+          producto={productoEdicion}
           categorias={categorias}
+          insumos={insumos}
+          recetaVigente={recetaEdicion}
           cargando={guardando}
           alGuardar={guardarProducto}
-          alCancelar={cerrarFormulario}
+          alCancelar={cerrarProducto}
+          alGestionarCategorias={() =>
+            setModalCategorias(true)
+          }
+        />
+      </Modal>
+
+      <Modal
+        abierto={modalCategorias}
+        titulo="Gestionar categorías"
+        descripcion="Crea, edita o cambia el estado de las categorías sin abandonar el catálogo de productos."
+        ancho="grande"
+        alCerrar={() =>
+          setModalCategorias(false)
+        }
+      >
+        <GestionCategorias
+          puedeGestionar={puedeGestionar}
+          alCambiar={() =>
+            void recargarDatos()
+          }
         />
       </Modal>
 
@@ -1932,8 +1320,8 @@ function GestionProductos({
         descripcion={
           accionEstado?.nuevoEstado ===
           "Activo"
-            ? `¿Deseas activar “${accionEstado.producto.nombre}”? El producto volverá a formar parte del catálogo activo.`
-            : `¿Deseas desactivar “${accionEstado?.producto.nombre ?? ""}”? También quedará marcado como no disponible y dejará de estar destacado.`
+            ? `“${accionEstado?.producto.nombre ?? ""}” volverá a estar habilitado para ventas.`
+            : `“${accionEstado?.producto.nombre ?? ""}” dejará de mostrarse para nuevas ventas. Su historial y receta se conservarán.`
         }
         textoConfirmar={
           accionEstado?.nuevoEstado ===
@@ -1941,18 +1329,17 @@ function GestionProductos({
             ? "Sí, activar"
             : "Sí, desactivar"
         }
+        centrarIcono
         variante={
           accionEstado?.nuevoEstado ===
           "Activo"
             ? "activar"
             : "peligro"
         }
-        cargando={cambiandoEstado}
-        alConfirmar={
-          confirmarCambioEstado
-        }
+        cargando={procesandoEstado}
+        alConfirmar={confirmarCambioEstado}
         alCancelar={() => {
-          if (!cambiandoEstado) {
+          if (!procesandoEstado) {
             setAccionEstado(null);
           }
         }}

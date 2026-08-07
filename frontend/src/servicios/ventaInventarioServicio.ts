@@ -13,6 +13,10 @@ import type {
 } from "../tipos/venta";
 
 import {
+  obtenerCajaAbiertaPorUsuario,
+} from "./cajaServicio";
+
+import {
   anularVenta,
   crearVenta,
 } from "./ventaServicio";
@@ -101,6 +105,17 @@ export async function registrarVentaConInventario(
   usuario: UsuarioSesion,
   autorizaSaldoNegativo: boolean,
 ): Promise<ResultadoVentaInventario> {
+  const cajaUsuario =
+    await obtenerCajaAbiertaPorUsuario(
+      usuario.id,
+    );
+
+  if (!cajaUsuario) {
+    throw new Error(
+      "Debes abrir tu propia caja antes de registrar una venta.",
+    );
+  }
+
   const evaluacion =
     await evaluarVentaConInventario(
       datos,
@@ -126,7 +141,11 @@ export async function registrarVentaConInventario(
 
   try {
     const venta =
-      await crearVenta(datos);
+      await crearVenta(
+        datos,
+        usuario,
+        cajaUsuario.id,
+      );
 
     await registrarConsumoInventarioVenta(
       {

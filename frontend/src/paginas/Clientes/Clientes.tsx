@@ -1,13 +1,17 @@
 import {
-  Ban,
-  FileCheck2,
-  Mail,
-  Pencil,
+  Archive,
+  ArchiveRestore,
+  Clock3,
+  Copy,
+  Edit3,
+  ExternalLink,
+  MapPin,
+  MessageCircle,
   Phone,
   Plus,
-  RotateCcw,
+  RefreshCw,
   Search,
-  UserCheck,
+  Share2,
   UsersRound,
 } from "lucide-react";
 
@@ -26,17 +30,30 @@ import {
 
 import {
   actualizarCliente,
-  cambiarEstadoCliente,
+  archivarCliente,
+  clienteTieneDatosEntrega,
+  clienteTieneDatosEntregaCompletos,
+  construirTextoEntregaCliente,
   crearCliente,
   listarClientes,
+  generarUrlWhatsappEntregaCliente,
+  obtenerUltimoPedidoCliente,
+  restaurarCliente,
 } from "../../servicios/clienteServicio";
+
+import {
+  listarVentas,
+} from "../../servicios/ventaServicio";
 
 import type {
   Cliente,
   CrearClienteDto,
-  EstadoCliente,
-  TipoDocumentoCliente,
+  ResumenUltimoPedidoCliente,
 } from "../../tipos/cliente";
+
+import type {
+  Venta,
+} from "../../tipos/venta";
 
 import NotificacionFlotante, {
   type DatosNotificacion,
@@ -48,16 +65,13 @@ import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
 
 import FormularioCliente from "./FormularioCliente";
 
-const CLIENTES_POR_PAGINA = 6;
+const CLIENTES_POR_PAGINA = 8;
 
-type FiltroEstadoCliente =
-  | "Todos"
-  | EstadoCliente;
-
-type FiltroDocumentoCliente =
-  | "Todos"
-  | "Sin documento"
-  | TipoDocumentoCliente;
+type FiltroDirectorio =
+  | "Directorio"
+  | "Con entrega"
+  | "Datos incompletos"
+  | "Archivados";
 
 function obtenerMensajeError(
   error: unknown,
@@ -69,7 +83,7 @@ function obtenerMensajeError(
   return "Ocurrió un error inesperado.";
 }
 
-function formatearFecha(
+function formatearFechaHora(
   fecha: string,
 ): string {
   return new Intl.DateTimeFormat(
@@ -79,6 +93,55 @@ function formatearFecha(
       timeStyle: "short",
     },
   ).format(new Date(fecha));
+}
+
+function formatearMoneda(
+  valor: number,
+): string {
+  return `Bs ${new Intl.NumberFormat(
+    "es-BO",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  ).format(valor)}`;
+}
+
+async function copiarTexto(
+  texto: string,
+): Promise<void> {
+  if (
+    navigator.clipboard &&
+    window.isSecureContext
+  ) {
+    await navigator.clipboard.writeText(
+      texto,
+    );
+
+    return;
+  }
+
+  const area =
+    document.createElement("textarea");
+
+  area.value = texto;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+
+  const copiado =
+    document.execCommand("copy");
+
+  document.body.removeChild(area);
+
+  if (!copiado) {
+    throw new Error(
+      "No se pudo copiar el texto.",
+    );
+  }
 }
 
 function obtenerIniciales(
@@ -115,6 +178,9 @@ function Clientes() {
   const [clientes, setClientes] =
     useState<Cliente[]>([]);
 
+  const [ventas, setVentas] =
+    useState<Venta[]>([]);
+
   const [cargando, setCargando] =
     useState(true);
 
@@ -124,20 +190,9 @@ function Clientes() {
   const [busqueda, setBusqueda] =
     useState("");
 
-  const [
-    filtroEstado,
-    setFiltroEstado,
-  ] =
-    useState<FiltroEstadoCliente>(
-      "Todos",
-    );
-
-  const [
-    filtroDocumento,
-    setFiltroDocumento,
-  ] =
-    useState<FiltroDocumentoCliente>(
-      "Todos",
+  const [filtro, setFiltro] =
+    useState<FiltroDirectorio>(
+      "Directorio",
     );
 
   const [paginaActual, setPaginaActual] =
@@ -146,28 +201,22 @@ function Clientes() {
   const [modalAbierto, setModalAbierto] =
     useState(false);
 
-  const [
-    clienteSeleccionado,
-    setClienteSeleccionado,
-  ] = useState<Cliente | null>(null);
+  const [clienteSeleccionado, setClienteSeleccionado] =
+    useState<Cliente | null>(null);
 
   const [guardando, setGuardando] =
     useState(false);
 
-  const [
-    clienteCambioEstado,
-    setClienteCambioEstado,
-  ] = useState<Cliente | null>(null);
+  const [clienteParaArchivar, setClienteParaArchivar] =
+    useState<Cliente | null>(null);
 
-  const [
-    cambiandoEstado,
-    setCambiandoEstado,
-  ] = useState(false);
+  const [clienteParaCompartir, setClienteParaCompartir] =
+    useState<Cliente | null>(null);
 
-  const [
-    notificacion,
-    setNotificacion,
-  ] =
+  const [cambiandoArchivo, setCambiandoArchivo] =
+    useState(false);
+
+  const [notificacion, setNotificacion] =
     useState<DatosNotificacion | null>(
       null,
     );
@@ -177,16 +226,20 @@ function Clientes() {
       setNotificacion(null);
     }, []);
 
-  const cargarClientes =
+  const cargarDatos =
     useCallback(async () => {
       try {
         setCargando(true);
         setErrorCarga(null);
 
-        const respuesta =
-          await listarClientes();
+        const [clientesRespuesta, ventasRespuesta] =
+          await Promise.all([
+            listarClientes(),
+            listarVentas(),
+          ]);
 
-        setClientes(respuesta);
+        setClientes(clientesRespuesta);
+        setVentas(ventasRespuesta);
       } catch (error: unknown) {
         setErrorCarga(
           obtenerMensajeError(error),
@@ -197,19 +250,25 @@ function Clientes() {
     }, []);
 
   useEffect(() => {
-    let componenteActivo = true;
+    let activo = true;
 
-    listarClientes()
-      .then((respuesta) => {
-        if (!componenteActivo) {
-          return;
-        }
+    Promise.all([
+      listarClientes(),
+      listarVentas(),
+    ])
+      .then(
+        ([clientesRespuesta, ventasRespuesta]) => {
+          if (!activo) {
+            return;
+          }
 
-        setClientes(respuesta);
-        setErrorCarga(null);
-      })
+          setClientes(clientesRespuesta);
+          setVentas(ventasRespuesta);
+          setErrorCarga(null);
+        },
+      )
       .catch((error: unknown) => {
-        if (!componenteActivo) {
+        if (!activo) {
           return;
         }
 
@@ -218,69 +277,94 @@ function Clientes() {
         );
       })
       .finally(() => {
-        if (componenteActivo) {
+        if (activo) {
           setCargando(false);
         }
       });
 
     return () => {
-      componenteActivo = false;
+      activo = false;
     };
   }, []);
 
+  const ultimoPedidoPorCliente =
+    useMemo(() => {
+      const mapa = new Map<
+        number,
+        ResumenUltimoPedidoCliente | null
+      >();
+
+      clientes.forEach((cliente) => {
+        mapa.set(
+          cliente.id,
+          obtenerUltimoPedidoCliente(
+            cliente.id,
+            ventas,
+          ),
+        );
+      });
+
+      return mapa;
+    }, [clientes, ventas]);
+
+  const clientesDirectorio =
+    useMemo(
+      () =>
+        clientes.filter(
+          (cliente) => !cliente.archivado,
+        ),
+      [clientes],
+    );
+
   const clientesFiltrados =
     useMemo(() => {
-      const textoBusqueda =
-        busqueda
-          .trim()
-          .toLocaleLowerCase("es");
+      const texto = busqueda
+        .trim()
+        .toLocaleLowerCase("es");
 
-      return clientes.filter(
-        (cliente) => {
-          const coincideBusqueda =
-            !textoBusqueda ||
-            cliente.nombreCompleto
-              .toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            cliente.numeroDocumento
+      return clientes.filter((cliente) => {
+        const coincideBusqueda =
+          !texto ||
+          [
+            cliente.nombreCompleto,
+            cliente.telefono,
+            cliente.numeroDocumento,
+            cliente.correo,
+            cliente.direccion,
+            cliente.zona,
+            cliente.referenciaDireccion,
+          ].some((valor) =>
+            valor
               ?.toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            cliente.telefono
-              ?.toLocaleLowerCase("es")
-              .includes(textoBusqueda) ||
-            cliente.correo
-              ?.toLocaleLowerCase("es")
-              .includes(textoBusqueda);
-
-          const coincideEstado =
-            filtroEstado === "Todos" ||
-            cliente.estado ===
-              filtroEstado;
-
-          const coincideDocumento =
-            filtroDocumento ===
-              "Todos" ||
-            (
-              filtroDocumento ===
-                "Sin documento" &&
-              !cliente.tipoDocumento
-            ) ||
-            cliente.tipoDocumento ===
-              filtroDocumento;
-
-          return (
-            coincideBusqueda &&
-            coincideEstado &&
-            coincideDocumento
+              .includes(texto),
           );
-        },
-      );
-    }, [
-      clientes,
-      busqueda,
-      filtroEstado,
-      filtroDocumento,
-    ]);
+
+        const coincideFiltro =
+          filtro === "Archivados"
+            ? cliente.archivado
+            : !cliente.archivado &&
+              (
+                filtro === "Directorio" ||
+                (
+                  filtro === "Con entrega" &&
+                  clienteTieneDatosEntrega(
+                    cliente,
+                  )
+                ) ||
+                (
+                  filtro === "Datos incompletos" &&
+                  !clienteTieneDatosEntregaCompletos(
+                    cliente,
+                  )
+                )
+              );
+
+        return (
+          coincideBusqueda &&
+          coincideFiltro
+        );
+      });
+    }, [clientes, busqueda, filtro]);
 
   const totalPaginas = Math.max(
     1,
@@ -303,47 +387,30 @@ function Clientes() {
 
       return clientesFiltrados.slice(
         inicio,
-        inicio +
-          CLIENTES_POR_PAGINA,
+        inicio + CLIENTES_POR_PAGINA,
       );
-    }, [
-      clientesFiltrados,
-      paginaSegura,
-    ]);
+    }, [clientesFiltrados, paginaSegura]);
 
-  const totalActivos =
-    clientes.filter(
-      (cliente) =>
-        cliente.estado === "Activo",
+  const totalArchivados =
+    clientes.length - clientesDirectorio.length;
+
+  const totalConTelefono =
+    clientesDirectorio.filter(
+      (cliente) => Boolean(cliente.telefono),
     ).length;
 
-  const totalInactivos =
-    clientes.length - totalActivos;
-
-  const totalConDocumento =
-    clientes.filter(
-      (cliente) =>
-        Boolean(
-          cliente.numeroDocumento,
-        ),
-    ).length;
-
-  const totalEmpresas =
-    clientes.filter(
-      (cliente) =>
-        cliente.tipoDocumento ===
-        "NIT",
+  const totalConUbicacion =
+    clientesDirectorio.filter(
+      clienteTieneDatosEntrega,
     ).length;
 
   const filtrosActivos =
     Boolean(busqueda) ||
-    filtroEstado !== "Todos" ||
-    filtroDocumento !== "Todos";
+    filtro !== "Directorio";
 
   function limpiarFiltros() {
     setBusqueda("");
-    setFiltroEstado("Todos");
-    setFiltroDocumento("Todos");
+    setFiltro("Directorio");
     setPaginaActual(1);
   }
 
@@ -387,7 +454,7 @@ function Clientes() {
       setGuardando(true);
 
       if (clienteSeleccionado) {
-        const clienteActualizado =
+        const actualizado =
           await actualizarCliente(
             clienteSeleccionado.id,
             datos,
@@ -397,57 +464,49 @@ function Clientes() {
           modulo: "Clientes",
           accion: "Actualizar cliente",
           entidad: "Cliente",
-          entidadId:
-            clienteActualizado.id,
+          entidadId: actualizado.id,
           descripcion:
-            `Se actualizó el cliente ${clienteActualizado.nombreCompleto}.`,
+            `Se actualizaron los datos de ${actualizado.nombreCompleto}.`,
           datosAnteriores:
             clienteSeleccionado,
-          datosPosteriores:
-            clienteActualizado,
+          datosPosteriores: actualizado,
         });
 
         setNotificacion({
           tipo: "exito",
-          titulo:
-            "Cliente actualizado",
+          titulo: "Cliente actualizado",
           mensaje:
-            "La información del cliente fue modificada correctamente.",
+            "Los datos del cliente y de entrega fueron guardados.",
         });
       } else {
-        const clienteCreado =
+        const creado =
           await crearCliente(datos);
 
         await auditarAccion({
           modulo: "Clientes",
           accion: "Crear cliente",
           entidad: "Cliente",
-          entidadId:
-            clienteCreado.id,
+          entidadId: creado.id,
           descripcion:
-            `Se registró el cliente ${clienteCreado.nombreCompleto}.`,
-          datosPosteriores:
-            clienteCreado,
+            `Se registró el cliente ${creado.nombreCompleto}.`,
+          datosPosteriores: creado,
         });
 
         setNotificacion({
           tipo: "exito",
-          titulo:
-            "Cliente registrado",
+          titulo: "Cliente registrado",
           mensaje:
-            "El nuevo cliente ya puede asociarse a pedidos y ventas.",
+            "El cliente ya puede asociarse a pedidos y entregas.",
         });
       }
 
       setModalAbierto(false);
       setClienteSeleccionado(null);
-
-      await cargarClientes();
+      await cargarDatos();
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
-        titulo:
-          "No se pudo guardar el cliente",
+        titulo: "No se pudo guardar",
         mensaje:
           obtenerMensajeError(error),
       });
@@ -456,160 +515,166 @@ function Clientes() {
     }
   }
 
-  async function confirmarCambioEstado() {
+  function abrirCompartirEntrega(
+    cliente: Cliente,
+  ) {
     if (
-      !clienteCambioEstado ||
+      !clienteTieneDatosEntrega(
+        cliente,
+      )
+    ) {
+      setNotificacion({
+        tipo: "info",
+        titulo: "Datos incompletos",
+        mensaje:
+          "Registra una dirección o un enlace de ubicación antes de compartir la entrega.",
+      });
+
+      return;
+    }
+
+    setClienteParaCompartir(cliente);
+  }
+
+  async function copiarDatosEntrega() {
+    if (!clienteParaCompartir) {
+      return;
+    }
+
+    try {
+      await copiarTexto(
+        construirTextoEntregaCliente(
+          clienteParaCompartir,
+        ),
+      );
+
+      setNotificacion({
+        tipo: "exito",
+        titulo: "Datos copiados",
+        mensaje:
+          "La información de entrega está lista para pegarse en el chat del repartidor.",
+      });
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+        titulo: "No se pudo copiar",
+        mensaje:
+          obtenerMensajeError(error),
+      });
+    }
+  }
+
+  function abrirWhatsappEntrega() {
+    if (!clienteParaCompartir) {
+      return;
+    }
+
+    window.open(
+      generarUrlWhatsappEntregaCliente(
+        clienteParaCompartir,
+      ),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }
+
+  async function confirmarArchivado() {
+    if (
+      !clienteParaArchivar ||
       !puedeGestionar
     ) {
       return;
     }
 
     try {
-      setCambiandoEstado(true);
+      setCambiandoArchivo(true);
 
-      const nuevoEstado:
-        EstadoCliente =
-        clienteCambioEstado.estado ===
-        "Activo"
-          ? "Inactivo"
-          : "Activo";
+      const restaurando =
+        clienteParaArchivar.archivado;
 
-      const clienteActualizado =
-        await cambiarEstadoCliente(
-          clienteCambioEstado.id,
-          nuevoEstado,
-        );
+      const actualizado = restaurando
+        ? await restaurarCliente(
+            clienteParaArchivar.id,
+          )
+        : await archivarCliente(
+            clienteParaArchivar.id,
+          );
 
       await auditarAccion({
         modulo: "Clientes",
-        accion:
-          nuevoEstado === "Activo"
-            ? "Activar cliente"
-            : "Desactivar cliente",
+        accion: restaurando
+          ? "Restaurar cliente"
+          : "Archivar cliente",
         entidad: "Cliente",
-        entidadId:
-          clienteActualizado.id,
+        entidadId: actualizado.id,
         descripcion:
-          `${clienteActualizado.nombreCompleto} fue ${nuevoEstado === "Activo" ? "activado" : "desactivado"}.`,
+          `${actualizado.nombreCompleto} fue ${restaurando ? "restaurado" : "archivado"}.`,
         datosAnteriores:
-          clienteCambioEstado,
-        datosPosteriores:
-          clienteActualizado,
+          clienteParaArchivar,
+        datosPosteriores: actualizado,
       });
 
       setNotificacion({
         tipo: "exito",
-        titulo:
-          nuevoEstado === "Activo"
-            ? "Cliente activado"
-            : "Cliente desactivado",
-        mensaje:
-          nuevoEstado === "Activo"
-            ? "El cliente puede asociarse nuevamente a pedidos y ventas."
-            : "El cliente quedó fuera de uso sin eliminar su información histórica.",
+        titulo: restaurando
+          ? "Cliente restaurado"
+          : "Cliente archivado",
+        mensaje: restaurando
+          ? "Volverá a aparecer en el directorio y en Ventas."
+          : "Se conserva su historial, pero ya no aparecerá en nuevas ventas.",
       });
 
-      setClienteCambioEstado(null);
-
-      await cargarClientes();
+      setClienteParaArchivar(null);
+      await cargarDatos();
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
         titulo:
-          "No se pudo cambiar el estado",
+          "No se pudo actualizar el directorio",
         mensaje:
           obtenerMensajeError(error),
       });
     } finally {
-      setCambiandoEstado(false);
+      setCambiandoArchivo(false);
     }
   }
 
   if (cargando) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div
-          className="
-            h-44 rounded-3xl
-            bg-slate-300
-          "
-        />
-
-        <div
-          className="
-            grid grid-cols-1 gap-5
-            sm:grid-cols-2 xl:grid-cols-4
-          "
-        >
-          {Array.from({
-            length: 4,
-          }).map((_, indice) => (
-            <div
-              key={indice}
-              className="
-                h-40 rounded-2xl
-                bg-white
-              "
-            />
-          ))}
+      <div className="space-y-4 animate-pulse">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map(
+            (_, indice) => (
+              <div
+                key={indice}
+                className="h-28 rounded-3xl bg-slate-200 dark:bg-slate-800"
+              />
+            ),
+          )}
         </div>
 
-        <div
-          className="
-            h-120 rounded-3xl
-            bg-white
-          "
-        />
+        <div className="h-[32rem] rounded-3xl bg-slate-200 dark:bg-slate-800" />
       </div>
     );
   }
 
   if (errorCarga) {
     return (
-      <section
-        className="
-          rounded-3xl border
-          border-red-200 bg-white
-          p-8 text-center
-          shadow-panel
-        "
-      >
-        <h2
-          className="
-            text-xl font-black
-            text-slate-900
-          "
-        >
-          No se pudieron cargar los
-          clientes
+      <section className="rounded-3xl border border-red-200 bg-white p-8 text-center shadow-panel dark:border-red-900/60 dark:bg-slate-900">
+        <h2 className="text-xl font-black text-slate-900 dark:text-white">
+          No se pudieron cargar los clientes
         </h2>
 
-        <p
-          className="
-            mt-2 text-sm
-            text-slate-500
-          "
-        >
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           {errorCarga}
         </p>
 
         <button
           type="button"
-          onClick={() =>
-            void cargarClientes()
-          }
-          className="
-            mt-5 inline-flex
-            items-center gap-2
-            rounded-xl
-            bg-red-700 px-5 py-3
-            text-sm font-bold
-            text-white
-            transition-colors
-            hover:bg-red-800
-          "
+          onClick={() => void cargarDatos()}
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-red-700 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-red-800"
         >
-          <RotateCcw size={18} />
+          <RefreshCw size={18} />
           Volver a intentar
         </button>
       </section>
@@ -617,902 +682,420 @@ function Clientes() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <NotificacionFlotante
         notificacion={notificacion}
         alCerrar={cerrarNotificacion}
       />
 
-      <section
-        className="
-          relative overflow-hidden
-          rounded-3xl
-          bg-linear-to-br
-          from-slate-950
-          via-slate-900
-          to-red-950
-          p-6 text-white
-          shadow-panel
-          sm:p-8
-        "
-      >
-        <div
-          className="
-            absolute -right-20
-            -top-20 h-56 w-56
-            rounded-full
-            bg-red-600/20
-            blur-3xl
-          "
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <TarjetaMetrica
+          titulo="Clientes registrados"
+          valor={String(
+            clientesDirectorio.length,
+          )}
+          descripcion="Disponibles en el directorio"
+          icono={UsersRound}
+          tono="azul"
+          variante="compacta"
         />
 
-        <div
-          className="
-            relative flex flex-col
-            gap-6 lg:flex-row
-            lg:items-center
-            lg:justify-between
-          "
-        >
+        <TarjetaMetrica
+          titulo="Con teléfono"
+          valor={String(totalConTelefono)}
+          descripcion="Contacto disponible"
+          icono={Phone}
+          tono="verde"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Con ubicación"
+          valor={String(totalConUbicacion)}
+          descripcion="Dirección o enlace registrado"
+          icono={MapPin}
+          tono="roma"
+          variante="compacta"
+        />
+
+        <TarjetaMetrica
+          titulo="Clientes archivados"
+          valor={String(totalArchivados)}
+          descripcion="Conservan su historial"
+          icono={Archive}
+          tono="neutro"
+          variante="compacta"
+        />
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900">
+        <header className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4 dark:border-slate-700">
           <div>
-            <div
-              className="
-                inline-flex items-center
-                gap-2 rounded-full
-                border border-white/15
-                bg-white/10
-                px-3 py-1.5
-                text-xs font-bold
-                text-red-100
-                backdrop-blur
-              "
-            >
-              <UsersRound size={15} />
-              Directorio comercial
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-700 dark:bg-red-950/45 dark:text-red-300">
+                <UsersRound size={21} />
+              </div>
+
+              <div>
+                <h1 className="text-lg font-black text-slate-950 dark:text-white">
+                  Directorio de clientes
+                </h1>
+
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Contacto y datos preparados para pedidos y entregas.
+                </p>
+              </div>
             </div>
-
-            <h1
-              className="
-                mt-4 text-3xl
-                font-black tracking-tight
-                sm:text-4xl
-              "
-            >
-              Gestión de clientes
-            </h1>
-
-            <p
-              className="
-                mt-3 max-w-2xl
-                text-sm leading-relaxed
-                text-slate-300
-                sm:text-base
-              "
-            >
-              Registra y consulta los
-              datos de clientes que podrán
-              asociarse a pedidos, ventas
-              y comprobantes.
-            </p>
           </div>
 
           {puedeGestionar && (
             <button
               type="button"
               onClick={abrirNuevoCliente}
-              className="
-                inline-flex items-center
-                justify-center gap-2
-                rounded-xl
-                bg-red-600 px-5 py-3
-                text-sm font-bold
-                text-white
-                shadow-lg
-                shadow-red-950/30
-                transition-all
-                hover:-translate-y-0.5
-                hover:bg-red-500
-              "
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-sm font-black text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-red-800 hover:shadow-md"
             >
-              <Plus size={19} />
+              <Plus size={18} />
               Nuevo cliente
             </button>
           )}
-        </div>
-      </section>
+        </header>
 
-      <section
-        className="
-          grid grid-cols-1 gap-5
-          sm:grid-cols-2 xl:grid-cols-4
-        "
-      >
-        <TarjetaMetrica
-          titulo="Clientes registrados"
-          valor={String(clientes.length)}
-          descripcion="Total del directorio"
-          icono={UsersRound}
-          tono="azul"
-        />
+        <div className="grid gap-3 border-b border-slate-200 bg-slate-50 p-3 sm:px-4 lg:grid-cols-[minmax(0,1fr)_240px_auto] dark:border-slate-700 dark:bg-slate-950/35">
+          <div className="relative">
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+            />
 
-        <TarjetaMetrica
-          titulo="Clientes activos"
-          valor={String(totalActivos)}
-          descripcion="Disponibles para ventas"
-          icono={UserCheck}
-          tono="verde"
-        />
-
-        <TarjetaMetrica
-          titulo="Clientes inactivos"
-          valor={String(totalInactivos)}
-          descripcion="Registros fuera de uso"
-          icono={Ban}
-          tono="ambar"
-        />
-
-        <TarjetaMetrica
-          titulo="Con documento"
-          valor={String(
-            totalConDocumento,
-          )}
-          descripcion={`${totalEmpresas} clientes con NIT`}
-          icono={FileCheck2}
-          tono="roma"
-        />
-      </section>
-
-      <section
-        className="
-          overflow-hidden
-          rounded-3xl border
-          border-slate-200
-          bg-white shadow-panel
-        "
-      >
-        <div
-          className="
-            border-b border-slate-100
-            p-5 sm:p-6
-          "
-        >
-          <div
-            className="
-              grid grid-cols-1
-              gap-4
-              xl:grid-cols-[1fr_220px_220px_auto]
-            "
-          >
-            <div className="relative">
-              <Search
-                size={19}
-                className="
-                  pointer-events-none
-                  absolute left-4 top-1/2
-                  -translate-y-1/2
-                  text-slate-400
-                "
-              />
-
-              <input
-                type="search"
-                value={busqueda}
-                placeholder="Buscar por nombre, documento, teléfono o correo..."
-                onChange={(evento) => {
-                  setBusqueda(
-                    evento.target.value,
-                  );
-
-                  setPaginaActual(1);
-                }}
-                className="
-                  h-12 w-full
-                  rounded-xl border
-                  border-slate-300
-                  bg-white pl-11 pr-4
-                  text-sm outline-none
-                  transition-all
-                  placeholder:text-slate-400
-                  focus:border-red-600
-                  focus:ring-4
-                  focus:ring-red-100
-                "
-              />
-            </div>
-
-            <select
-              value={filtroDocumento}
+            <input
+              type="search"
+              value={busqueda}
+              placeholder="Nombre, teléfono, dirección, zona o referencia"
               onChange={(evento) => {
-                setFiltroDocumento(
-                  evento.target
-                    .value as FiltroDocumentoCliente,
+                setBusqueda(
+                  evento.target.value,
                 );
-
                 setPaginaActual(1);
               }}
-              className="
-                h-12 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-semibold
-                text-slate-700
-                outline-none
-                focus:border-red-600
-                focus:ring-4
-                focus:ring-red-100
-              "
-            >
-              <option value="Todos">
-                Todos los documentos
-              </option>
-
-              <option value="CI">
-                Cédula de identidad
-              </option>
-
-              <option value="NIT">
-                NIT
-              </option>
-
-              <option value="Pasaporte">
-                Pasaporte
-              </option>
-
-              <option value="Otro">
-                Otro documento
-              </option>
-
-              <option value="Sin documento">
-                Sin documento
-              </option>
-            </select>
-
-            <select
-              value={filtroEstado}
-              onChange={(evento) => {
-                setFiltroEstado(
-                  evento.target
-                    .value as FiltroEstadoCliente,
-                );
-
-                setPaginaActual(1);
-              }}
-              className="
-                h-12 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-semibold
-                text-slate-700
-                outline-none
-                focus:border-red-600
-                focus:ring-4
-                focus:ring-red-100
-              "
-            >
-              <option value="Todos">
-                Todos los estados
-              </option>
-
-              <option value="Activo">
-                Activos
-              </option>
-
-              <option value="Inactivo">
-                Inactivos
-              </option>
-            </select>
-
-            <button
-              type="button"
-              disabled={!filtrosActivos}
-              onClick={limpiarFiltros}
-              className="
-                inline-flex h-12
-                items-center justify-center
-                gap-2 rounded-xl
-                border border-slate-300
-                bg-white px-4
-                text-sm font-bold
-                text-slate-700
-                transition-colors
-                hover:bg-slate-100
-                disabled:cursor-not-allowed
-                disabled:opacity-40
-              "
-            >
-              <RotateCcw size={17} />
-              Limpiar
-            </button>
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:border-red-500 dark:focus:ring-red-950/60"
+            />
           </div>
 
-          <p
-            className="
-              mt-4 text-sm
-              text-slate-500
-            "
+          <select
+            value={filtro}
+            onChange={(evento) => {
+              setFiltro(
+                evento.target.value as FiltroDirectorio,
+              );
+              setPaginaActual(1);
+            }}
+            className="h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
           >
-            Se encontraron{" "}
-            <strong
-              className="
-                text-slate-800
-              "
-            >
-              {clientesFiltrados.length}
-            </strong>{" "}
-            clientes.
-          </p>
+            <option value="Directorio">
+              Todos los clientes
+            </option>
+            <option value="Con entrega">
+              Con datos de entrega
+            </option>
+            <option value="Datos incompletos">
+              Datos incompletos
+            </option>
+            <option value="Archivados">
+              Archivados
+            </option>
+          </select>
+
+          <button
+            type="button"
+            disabled={!filtrosActivos}
+            onClick={limpiarFiltros}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <RefreshCw size={17} />
+            Limpiar
+          </button>
         </div>
 
-        {clientesPagina.length === 0 ? (
-          <div
-            className="
-              flex min-h-80
-              flex-col items-center
-              justify-center
-              p-8 text-center
-            "
-          >
-            <div
-              className="
-                flex h-16 w-16
-                items-center justify-center
-                rounded-2xl
-                bg-slate-100
-                text-slate-400
-              "
-            >
-              <Search size={29} />
+        <div className="h-[clamp(18rem,36vh,23rem)] overflow-y-auto overscroll-contain p-3 sm:p-4">
+          {clientesPagina.length === 0 ? (
+            <div className="flex h-full min-h-0 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 px-6 text-center dark:border-slate-700">
+              <UsersRound
+                size={34}
+                className="text-slate-400"
+              />
+
+              <h2 className="mt-4 font-black text-slate-900 dark:text-white">
+                No se encontraron clientes
+              </h2>
+
+              <p className="mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                Ajusta la búsqueda o limpia los filtros para volver al directorio completo.
+              </p>
+
+              {filtrosActivos && (
+                <button
+                  type="button"
+                  onClick={limpiarFiltros}
+                  className="mt-4 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white dark:bg-white dark:text-slate-900"
+                >
+                  Limpiar filtros
+                </button>
+              )}
             </div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="sticky top-0 z-10 hidden grid-cols-[minmax(220px,1.1fr)_minmax(180px,0.75fr)_minmax(260px,1.15fr)_minmax(190px,0.8fr)_150px] gap-4 rounded-xl bg-white/95 px-4 py-2 text-[10px] font-black uppercase tracking-wide text-slate-500 backdrop-blur xl:grid dark:bg-slate-900/95 dark:text-slate-400">
+                <span>Cliente</span>
+                <span>Contacto</span>
+                <span>Datos de entrega</span>
+                <span>Último pedido</span>
+                <span className="text-right">Acciones</span>
+              </div>
 
-            <h2
-              className="
-                mt-5 text-lg
-                font-black
-                text-slate-900
-              "
-            >
-              No existen resultados
-            </h2>
+              {clientesPagina.map((cliente) => {
+                const ultimoPedido =
+                  ultimoPedidoPorCliente.get(
+                    cliente.id,
+                  ) ?? null;
 
-            <p
-              className="
-                mt-2 max-w-md
-                text-sm leading-relaxed
-                text-slate-500
-              "
-            >
-              Modifica los criterios de
-              búsqueda o registra un nuevo
-              cliente.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table
-              className="
-                w-full min-w-[1150px]
-              "
-            >
-              <thead>
-                <tr className="bg-slate-50">
-                  <th
-                    className="
-                      px-5 py-4 text-left
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
+                return (
+                  <article
+                    key={cliente.id}
+                    className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 transition-colors hover:border-slate-300 hover:bg-slate-50 xl:grid-cols-[minmax(220px,1.1fr)_minmax(180px,0.75fr)_minmax(260px,1.15fr)_minmax(190px,0.8fr)_150px] xl:items-center dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/70"
                   >
-                    Cliente
-                  </th>
-
-                  <th
-                    className="
-                      px-5 py-4 text-left
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
-                  >
-                    Documento
-                  </th>
-
-                  <th
-                    className="
-                      px-5 py-4 text-left
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
-                  >
-                    Contacto
-                  </th>
-
-                  <th
-                    className="
-                      px-5 py-4 text-left
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
-                  >
-                    Estado
-                  </th>
-
-                  <th
-                    className="
-                      px-5 py-4 text-left
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
-                  >
-                    Actualización
-                  </th>
-
-                  <th
-                    className="
-                      px-5 py-4 text-right
-                      text-xs font-bold
-                      uppercase tracking-wider
-                      text-slate-500
-                    "
-                  >
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody
-                className="
-                  divide-y divide-slate-100
-                "
-              >
-                {clientesPagina.map(
-                  (cliente) => (
-                    <tr
-                      key={cliente.id}
-                      className="
-                        transition-colors
-                        hover:bg-slate-50/70
-                      "
-                    >
-                      <td className="px-5 py-4">
-                        <div
-                          className="
-                            flex items-start
-                            gap-3
-                          "
-                        >
-                          <div
-                            className="
-                              flex h-11 w-11
-                              shrink-0 items-center
-                              justify-center
-                              rounded-2xl
-                              bg-red-50
-                              text-sm font-black
-                              text-red-700
-                            "
-                          >
-                            {obtenerIniciales(
-                              cliente.nombreCompleto,
-                            )}
-                          </div>
-
-                          <div>
-                            <p
-                              className="
-                                font-bold
-                                text-slate-900
-                              "
-                            >
-                              {
-                                cliente.nombreCompleto
-                              }
-                            </p>
-
-                            {cliente.direccion && (
-                              <p
-                                className="
-                                  mt-1 max-w-xs
-                                  text-xs
-                                  leading-relaxed
-                                  text-slate-500
-                                "
-                              >
-                                {cliente.direccion}
-                              </p>
-                            )}
-
-                            {cliente.observaciones && (
-                              <p
-                                className="
-                                  mt-1 max-w-xs
-                                  text-[11px]
-                                  italic
-                                  text-slate-400
-                                "
-                              >
-                                {
-                                  cliente.observaciones
-                                }
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        {cliente.tipoDocumento &&
-                        cliente.numeroDocumento ? (
-                          <div>
-                            <span
-                              className="
-                                inline-flex
-                                rounded-full
-                                bg-blue-50
-                                px-3 py-1
-                                text-xs font-bold
-                                text-blue-700
-                              "
-                            >
-                              {
-                                cliente.tipoDocumento
-                              }
-                            </span>
-
-                            <p
-                              className="
-                                mt-2 text-sm
-                                font-semibold
-                                text-slate-700
-                              "
-                            >
-                              {
-                                cliente.numeroDocumento
-                              }
-                            </p>
-                          </div>
-                        ) : (
-                          <span
-                            className="
-                              text-xs font-semibold
-                              text-slate-400
-                            "
-                          >
-                            Sin documento
-                          </span>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-sm font-black text-red-700 dark:bg-red-950/45 dark:text-red-300">
+                        {obtenerIniciales(
+                          cliente.nombreCompleto,
                         )}
-                      </td>
+                      </div>
 
-                      <td className="px-5 py-4">
-                        <div className="space-y-2">
-                          {cliente.telefono ? (
-                            <div
-                              className="
-                                flex items-center
-                                gap-2 text-sm
-                                text-slate-700
-                              "
-                            >
-                              <Phone
-                                size={15}
-                                className="
-                                  shrink-0
-                                  text-emerald-600
-                                "
-                              />
+                      <div className="min-w-0">
+                        <p className="truncate font-black text-slate-950 dark:text-white">
+                          {cliente.nombreCompleto}
+                        </p>
 
-                              <span>
-                                {
-                                  cliente.telefono
-                                }
-                              </span>
-                            </div>
-                          ) : (
-                            <p
-                              className="
-                                text-xs
-                                text-slate-400
-                              "
-                            >
-                              Sin teléfono
-                            </p>
-                          )}
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          CLI-{String(cliente.id).padStart(4, "0")}
+                          {cliente.archivado
+                            ? " · Archivado"
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
 
-                          {cliente.correo && (
-                            <div
-                              className="
-                                flex items-center
-                                gap-2 text-xs
-                                text-slate-500
-                              "
-                            >
-                              <Mail
-                                size={14}
-                                className="
-                                  shrink-0
-                                  text-blue-600
-                                "
-                              />
-
-                              <span>
-                                {cliente.correo}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <span
-                          className={`
-                            inline-flex
-                            items-center gap-2
-                            rounded-full
-                            px-3 py-1
-                            text-xs font-bold
-                            ${
-                              cliente.estado ===
-                              "Activo"
-                                ? `
-                                  bg-emerald-50
-                                  text-emerald-700
-                                `
-                                : `
-                                  bg-slate-100
-                                  text-slate-600
-                                `
-                            }
-                          `}
-                        >
-                          <span
-                            className={`
-                              h-2 w-2
-                              rounded-full
-                              ${
-                                cliente.estado ===
-                                "Activo"
-                                  ? "bg-emerald-500"
-                                  : "bg-slate-400"
-                              }
-                            `}
-                          />
-
-                          {cliente.estado}
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
+                        <Phone
+                          size={15}
+                          className="shrink-0 text-emerald-600 dark:text-emerald-400"
+                        />
+                        <span className="truncate">
+                          {cliente.telefono ??
+                            "Sin teléfono"}
                         </span>
-                      </td>
+                      </p>
 
-                      <td
-                        className="
-                          px-5 py-4
-                          text-sm
-                          text-slate-600
-                        "
-                      >
-                        {formatearFecha(
-                          cliente.fechaActualizacion,
-                        )}
-                      </td>
+                      {cliente.correo && (
+                        <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                          {cliente.correo}
+                        </p>
+                      )}
+                    </div>
 
-                      <td className="px-5 py-4">
-                        {puedeGestionar ? (
-                          <div
-                            className="
-                              flex items-center
-                              justify-end gap-2
-                            "
-                          >
-                            <button
-                              type="button"
-                              title="Editar cliente"
-                              onClick={() =>
-                                abrirEdicion(
-                                  cliente,
-                                )
-                              }
-                              className="
-                                inline-flex
-                                items-center gap-2
-                                rounded-xl
-                                bg-blue-50
-                                px-3 py-2
-                                text-xs font-bold
-                                text-blue-700
-                                transition-colors
-                                hover:bg-blue-100
-                              "
-                            >
-                              <Pencil size={15} />
-                              Editar
-                            </button>
-
-                            <button
-                              type="button"
-                              title={
-                                cliente.estado ===
-                                "Activo"
-                                  ? "Desactivar cliente"
-                                  : "Activar cliente"
-                              }
-                              onClick={() =>
-                                setClienteCambioEstado(
-                                  cliente,
-                                )
-                              }
-                              className={`
-                                inline-flex
-                                items-center gap-2
-                                rounded-xl px-3 py-2
-                                text-xs font-bold
-                                transition-colors
-                                ${
-                                  cliente.estado ===
-                                  "Activo"
-                                    ? `
-                                      bg-red-50
-                                      text-red-700
-                                      hover:bg-red-100
-                                    `
-                                    : `
-                                      bg-emerald-50
-                                      text-emerald-700
-                                      hover:bg-emerald-100
-                                    `
-                                }
-                              `}
-                            >
-                              {cliente.estado ===
-                              "Activo" ? (
-                                <Ban size={15} />
-                              ) : (
-                                <UserCheck
-                                  size={15}
-                                />
-                              )}
-
-                              {cliente.estado ===
-                              "Activo"
-                                ? "Desactivar"
-                                : "Activar"}
-                            </button>
-                          </div>
-                        ) : (
-                          <p
-                            className="
-                              text-right
-                              text-xs font-semibold
-                              text-slate-400
-                            "
-                          >
-                            Solo lectura
+                    <div className="min-w-0">
+                      {clienteTieneDatosEntrega(
+                        cliente,
+                      ) ? (
+                        <>
+                          <p className="flex items-start gap-2 text-sm font-bold text-slate-800 dark:text-slate-200">
+                            <MapPin
+                              size={16}
+                              className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400"
+                            />
+                            <span className="line-clamp-2">
+                              {cliente.direccion ??
+                                "Ubicación compartida"}
+                            </span>
                           </p>
-                        )}
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
 
-        <div
-          className="
-            flex flex-col gap-4
-            border-t border-slate-100
-            px-5 py-4 sm:flex-row
-            sm:items-center
-            sm:justify-between
-            sm:px-6
-          "
-        >
-          <p
-            className="
-              text-sm text-slate-500
-            "
-          >
-            Página{" "}
-            <strong
-              className="
-                text-slate-800
-              "
-            >
-              {paginaSegura}
-            </strong>{" "}
-            de{" "}
-            <strong
-              className="
-                text-slate-800
-              "
-            >
-              {totalPaginas}
-            </strong>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            {cliente.zona && (
+                              <span>
+                                {cliente.zona}
+                              </span>
+                            )}
+
+                            {cliente.ubicacionUrl && (
+                              <a
+                                href={cliente.ubicacionUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 font-bold text-blue-700 hover:underline dark:text-blue-300"
+                              >
+                                Abrir mapa
+                                <ExternalLink size={12} />
+                              </a>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Sin ubicación registrada
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      {ultimoPedido ? (
+                        <>
+                          <p className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
+                            <Clock3
+                              size={15}
+                              className="shrink-0 text-violet-600 dark:text-violet-400"
+                            />
+                            {ultimoPedido.numeroPedido}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {formatearFechaHora(
+                              ultimoPedido.fechaHoraRegistro,
+                            )}
+                          </p>
+
+                          <p className="mt-1 text-xs font-black text-slate-700 dark:text-slate-300">
+                            {formatearMoneda(
+                              ultimoPedido.total,
+                            )}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Sin pedidos registrados
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2">
+                      {puedeGestionar && (
+                        <>
+                          {!cliente.archivado &&
+                            clienteTieneDatosEntrega(
+                              cliente,
+                            ) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  abrirCompartirEntrega(
+                                    cliente,
+                                  )
+                                }
+                                aria-label={`Compartir entrega de ${cliente.nombreCompleto}`}
+                                title="Compartir datos de entrega"
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition-all hover:-translate-y-0.5 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                              >
+                                <Share2 size={17} />
+                              </button>
+                            )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              abrirEdicion(cliente)
+                            }
+                            aria-label={`Editar ${cliente.nombreCompleto}`}
+                            title="Editar cliente"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:-translate-y-0.5 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/45 dark:text-blue-300 dark:hover:bg-blue-900/60"
+                          >
+                            <Edit3 size={17} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setClienteParaArchivar(
+                                cliente,
+                              )
+                            }
+                            aria-label={`${cliente.archivado ? "Restaurar" : "Archivar"} ${cliente.nombreCompleto}`}
+                            title={
+                              cliente.archivado
+                                ? "Restaurar cliente"
+                                : "Archivar cliente"
+                            }
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
+                              cliente.archivado
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                            }`}
+                          >
+                            {cliente.archivado ? (
+                              <ArchiveRestore size={17} />
+                            ) : (
+                              <Archive size={17} />
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <footer className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:border-slate-700">
+          <p className="text-slate-500 dark:text-slate-400">
+            Mostrando {clientesPagina.length} de {clientesFiltrados.length} cliente(s)
           </p>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={paginaSegura === 1}
+              disabled={paginaSegura <= 1}
               onClick={() =>
                 setPaginaActual(
-                  (pagina) =>
-                    Math.max(
-                      1,
-                      pagina - 1,
-                    ),
+                  (pagina) => pagina - 1,
                 )
               }
-              className="
-                rounded-xl border
-                border-slate-300
-                px-4 py-2
-                text-sm font-bold
-                text-slate-700
-                transition-colors
-                hover:bg-slate-100
-                disabled:cursor-not-allowed
-                disabled:opacity-40
-              "
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200"
             >
               Anterior
             </button>
 
+            <span className="min-w-20 text-center text-xs font-black text-slate-500 dark:text-slate-400">
+              {paginaSegura} / {totalPaginas}
+            </span>
+
             <button
               type="button"
-              disabled={
-                paginaSegura ===
-                totalPaginas
-              }
+              disabled={paginaSegura >= totalPaginas}
               onClick={() =>
                 setPaginaActual(
-                  (pagina) =>
-                    Math.min(
-                      totalPaginas,
-                      pagina + 1,
-                    ),
+                  (pagina) => pagina + 1,
                 )
               }
-              className="
-                rounded-xl border
-                border-slate-300
-                px-4 py-2
-                text-sm font-bold
-                text-slate-700
-                transition-colors
-                hover:bg-slate-100
-                disabled:cursor-not-allowed
-                disabled:opacity-40
-              "
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200"
             >
               Siguiente
             </button>
           </div>
-        </div>
+        </footer>
       </section>
 
       <Modal
         abierto={modalAbierto}
         titulo={
           clienteSeleccionado
-            ? "Modificar cliente"
-            : "Registrar cliente"
+            ? "Editar cliente"
+            : "Nuevo cliente"
         }
-        descripcion={
-          clienteSeleccionado
-            ? "Actualiza la información del cliente seleccionado."
-            : "Completa los datos disponibles para incorporar un cliente al directorio."
-        }
+        descripcion="Guarda el contacto y la información necesaria para pedidos y entregas."
         ancho="grande"
         alCerrar={cerrarFormulario}
       >
         <FormularioCliente
-          key={
-            clienteSeleccionado
-              ? `editar-cliente-${clienteSeleccionado.id}`
-              : "nuevo-cliente"
-          }
           cliente={clienteSeleccionado}
           cargando={guardando}
           alGuardar={guardarCliente}
@@ -1520,43 +1103,100 @@ function Clientes() {
         />
       </Modal>
 
+      <Modal
+        abierto={Boolean(
+          clienteParaCompartir,
+        )}
+        titulo="Compartir datos de entrega"
+        descripcion="Revisa la información antes de copiarla o abrirla en WhatsApp."
+        ancho="mediano"
+        alCerrar={() =>
+          setClienteParaCompartir(null)
+        }
+      >
+        {clienteParaCompartir && (
+          <div className="space-y-5 p-5 sm:p-6">
+            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/35">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                  <MapPin size={20} />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="font-black text-slate-900 dark:text-white">
+                    {clienteParaCompartir.nombreCompleto}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    {clienteParaCompartir.telefono ??
+                      "Sin teléfono registrado"}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+              {construirTextoEntregaCliente(
+                clienteParaCompartir,
+              )}
+            </pre>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() =>
+                  void copiarDatosEntrega()
+                }
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                <Copy size={17} />
+                Copiar datos
+              </button>
+
+              <button
+                type="button"
+                onClick={abrirWhatsappEntrega}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white transition-colors hover:bg-emerald-700"
+              >
+                <MessageCircle size={17} />
+                Abrir WhatsApp
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <ModalConfirmacion
         abierto={Boolean(
-          clienteCambioEstado,
+          clienteParaArchivar,
         )}
         titulo={
-          clienteCambioEstado?.estado ===
-          "Activo"
-            ? "Desactivar cliente"
-            : "Activar cliente"
+          clienteParaArchivar?.archivado
+            ? "Restaurar cliente"
+            : "Archivar cliente"
         }
         descripcion={
-          clienteCambioEstado?.estado ===
-          "Activo"
-            ? `¿Deseas desactivar a “${clienteCambioEstado.nombreCompleto}”? No podrá seleccionarse en nuevos pedidos, pero su historial se conservará.`
-            : `¿Deseas activar a “${clienteCambioEstado?.nombreCompleto ?? ""}”? Podrá asociarse nuevamente a pedidos y ventas.`
+          clienteParaArchivar?.archivado
+            ? `¿Deseas restaurar a ${clienteParaArchivar.nombreCompleto}? Volverá a estar disponible en el selector de Ventas.`
+            : `¿Deseas archivar a ${clienteParaArchivar?.nombreCompleto ?? "este cliente"}? Su historial se conservará, pero dejará de aparecer en nuevas ventas.`
         }
         textoConfirmar={
-          clienteCambioEstado?.estado ===
-          "Activo"
-            ? "Sí, desactivar"
-            : "Sí, activar"
+          clienteParaArchivar?.archivado
+            ? "Restaurar"
+            : "Archivar"
         }
         variante={
-          clienteCambioEstado?.estado ===
-          "Activo"
-            ? "peligro"
-            : "activar"
+          clienteParaArchivar?.archivado
+            ? "activar"
+            : "peligro"
         }
-        cargando={cambiandoEstado}
+        centrarIcono
+        cargando={cambiandoArchivo}
         alConfirmar={() =>
-          void confirmarCambioEstado()
+          void confirmarArchivado()
         }
-        alCancelar={() => {
-          if (!cambiandoEstado) {
-            setClienteCambioEstado(null);
-          }
-        }}
+        alCancelar={() =>
+          setClienteParaArchivar(null)
+        }
       />
     </div>
   );
