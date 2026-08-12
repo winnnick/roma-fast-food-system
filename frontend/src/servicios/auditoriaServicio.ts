@@ -6,7 +6,6 @@ import type {
   FiltroAuditoria,
   RegistrarAuditoriaDto,
   RegistroAuditoria,
-  ResumenAuditoria,
 } from "../tipos/auditoria";
 
 const CLAVE_AUDITORIA =
@@ -413,60 +412,4 @@ export async function listarAuditoria(
         ).getTime(),
     )
     .map(clonarRegistro);
-}
-
-export async function obtenerResumenAuditoria(
-  filtro: FiltroAuditoria = {},
-): Promise<ResumenAuditoria> {
-  const registros =
-    await listarAuditoria(filtro);
-
-  return {
-    totalEventos: registros.length,
-
-    eventosInformativos:
-      registros.filter(
-        (registro) =>
-          registro.nivel ===
-          "Información",
-      ).length,
-
-    eventosAdvertencia:
-      registros.filter(
-        (registro) =>
-          registro.nivel ===
-          "Advertencia",
-      ).length,
-
-    eventosCriticos:
-      registros.filter(
-        (registro) =>
-          registro.nivel ===
-          "Crítico",
-      ).length,
-
-    usuariosActivos:
-      new Set(
-        registros
-          .map(
-            (registro) =>
-              registro.usuarioId,
-          )
-          .filter(
-            (usuarioId) =>
-              usuarioId !== null,
-          ),
-      ).size,
-
-    modulosConActividad:
-      new Set(
-        registros.map(
-          (registro) =>
-            registro.modulo,
-        ),
-      ).size,
-
-    ultimoEvento:
-      registros[0] ?? null,
-  };
 }

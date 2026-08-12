@@ -419,24 +419,7 @@ export async function listarProductos():
       productoB.id - productoA.id,
     )
     .map(clonarProducto);
-}
-
-export async function obtenerProductoPorId(
-  id: number,
-): Promise<ProductoMenu | null> {
-  await esperar(100);
-
-  const producto =
-    obtenerProductosPersistidos().find(
-      (item) => item.id === id,
-    );
-
-  return producto
-    ? clonarProducto(producto)
-    : null;
-}
-
-export async function crearProducto(
+}export async function crearProducto(
   datos: CrearProductoDto,
 ): Promise<ProductoMenu> {
   await esperar(700);
@@ -726,60 +709,7 @@ export async function cambiarEstadoProducto(
   return clonarProducto(
     productoActualizado,
   );
-}
-
-export async function cambiarDisponibilidadProducto(
-  id: number,
-  disponible: boolean,
-): Promise<ProductoMenu> {
-  await esperar(400);
-
-  const productos =
-    obtenerProductosPersistidos();
-
-  const indiceProducto =
-    productos.findIndex(
-      (producto) =>
-        producto.id === id,
-    );
-
-  if (indiceProducto === -1) {
-    throw new Error(
-      "El producto seleccionado no existe.",
-    );
-  }
-
-  const productoActual =
-    productos[indiceProducto];
-
-  if (
-    productoActual.estado ===
-    "Inactivo"
-  ) {
-    throw new Error(
-      "No se puede cambiar la disponibilidad de un producto inactivo.",
-    );
-  }
-
-  const productoActualizado:
-    ProductoMenu = {
-    ...productoActual,
-    disponible,
-    fechaActualizacion:
-      new Date().toISOString(),
-  };
-
-  productos[indiceProducto] =
-    productoActualizado;
-
-  guardarProductos(productos);
-
-  return clonarProducto(
-    productoActualizado,
-  );
-}
-
-export async function cambiarProductoDestacado(
+}export async function cambiarProductoDestacado(
   id: number,
   destacado: boolean,
 ): Promise<ProductoMenu> {

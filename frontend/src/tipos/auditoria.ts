@@ -78,15 +78,3 @@ export interface FiltroAuditoria {
 
   texto?: string;
 }
-
-export interface ResumenAuditoria {
-  totalEventos: number;
-  eventosInformativos: number;
-  eventosAdvertencia: number;
-  eventosCriticos: number;
-
-  usuariosActivos: number;
-  modulosConActividad: number;
-
-  ultimoEvento: RegistroAuditoria | null;
-}

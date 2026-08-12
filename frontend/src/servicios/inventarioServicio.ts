@@ -899,27 +899,7 @@ export async function listarInsumosInventario():
       ),
     )
     .map(clonarInsumo);
-}
-
-export async function obtenerInsumoInventarioPorId(
-  id: number,
-): Promise<InsumoInventario | null> {
-  garantizarDatosIniciales();
-  await esperar(150);
-
-  const insumo =
-    obtenerInsumosPersistidos()
-      .find(
-        (item) =>
-          item.id === id,
-      );
-
-  return insumo
-    ? clonarInsumo(insumo)
-    : null;
-}
-
-export async function crearInsumoInventario(
+}export async function crearInsumoInventario(
   datos: CrearInsumoDto,
   usuario: UsuarioSesion,
 ): Promise<InsumoInventario> {

@@ -2,7 +2,6 @@ import type {
   ActualizarClienteDto,
   Cliente,
   CrearClienteDto,
-  EstadoCliente,
   ResumenUltimoPedidoCliente,
 } from "../tipos/cliente";
 
@@ -916,26 +915,7 @@ export async function listarClientes():
         ),
     )
     .map(clonarCliente);
-}
-
-export async function obtenerClientePorId(
-  id: number,
-): Promise<Cliente | null> {
-  await esperar(180);
-
-  const cliente =
-    obtenerClientesPersistidos()
-      .find(
-        (clienteActual) =>
-          clienteActual.id === id,
-      );
-
-  return cliente
-    ? clonarCliente(cliente)
-    : null;
-}
-
-export async function crearCliente(
+}export async function crearCliente(
   datos: CrearClienteDto,
 ): Promise<Cliente> {
   await esperar(420);
@@ -1156,18 +1136,4 @@ export async function restaurarCliente(
   return clonarCliente(
     clienteActualizado,
   );
-}
-
-/**
- * Compatibilidad temporal con la interfaz anterior.
- * En la pantalla rediseñada se usarán archivarCliente
- * y restaurarCliente.
- */
-export async function cambiarEstadoCliente(
-  id: number,
-  nuevoEstado: EstadoCliente,
-): Promise<Cliente> {
-  return nuevoEstado === "Activo"
-    ? restaurarCliente(id)
-    : archivarCliente(id);
 }

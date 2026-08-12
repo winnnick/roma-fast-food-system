@@ -22,43 +22,12 @@ export type TipoReporteAdministrativo =
   | "Bitácora"
   | "PedidosYa";
 
-export interface FiltroReporteAdministrativo {
-  fechaDesde: string;
-  fechaHasta: string;
-
-  usuarioId?: number;
-  metodoPago?: MetodoPago;
-
-  estadoCobro?: EstadoCobro;
-  estadoPreparacion?: EstadoPreparacion;
-
-  productoId?: number;
-  categoriaId?: number;
-
-  tipoMovimientoInventario?:
-    TipoMovimientoInventario;
-
-  texto?: string;
-}
-
 export interface ColumnaExportacion<T> {
   encabezado: string;
   obtenerValor: (registro: T) => unknown;
   peso?: number;
   alineacion?: "izquierda" | "centro" | "derecha";
-}
-
-export interface DocumentoReporte<T> {
-  titulo: string;
-  descripcion: string;
-
-  fechaGeneracion: string;
-  filtro: FiltroReporteAdministrativo;
-
-  registros: T[];
-}
-
-export interface FilaReporteVenta {
+}export interface FilaReporteVenta {
   ventaId: number;
   numeroPedido: string;
 

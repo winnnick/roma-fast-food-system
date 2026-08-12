@@ -7,7 +7,6 @@ import {
   PackageCheck,
   RefreshCcw,
   Save,
-  Search,
   ShieldCheck,
   ShieldX,
   UserRound,
@@ -262,9 +261,6 @@ function RolesPermisos() {
     permisosUsuarioEditados,
     setPermisosUsuarioEditados,
   ] = useState<PermisoSistema[]>([]);
-
-  const [busquedaUsuario, setBusquedaUsuario] =
-    useState("");
 
   const [cargando, setCargando] =
     useState(true);
@@ -635,45 +631,6 @@ function RolesPermisos() {
     modo === "rol"
       ? hayCambiosRol
       : hayCambiosUsuario;
-
-  const usuariosFiltrados = useMemo(() => {
-    const termino =
-      busquedaUsuario.trim().toLowerCase();
-
-    if (!termino) {
-      return usuariosConfigurables;
-    }
-
-    return usuariosConfigurables.filter(
-      (usuario) =>
-        usuario.nombreCompleto
-          .toLowerCase()
-          .includes(termino) ||
-        usuario.username
-          .toLowerCase()
-          .includes(termino) ||
-        usuario.rol
-          .toLowerCase()
-          .includes(termino),
-    );
-  }, [
-    usuariosConfigurables,
-    busquedaUsuario,
-  ]);
-
-  const opcionesUsuario = useMemo(() => {
-    if (!usuarioActual) {
-      return usuariosFiltrados;
-    }
-
-    return [
-      usuarioActual,
-      ...usuariosFiltrados.filter(
-        (usuario) =>
-          usuario.id !== usuarioActual.id,
-      ),
-    ];
-  }, [usuarioActual, usuariosFiltrados]);
 
   const rolesAdicionalesUsuario =
     usuarioActual
@@ -1283,7 +1240,7 @@ function RolesPermisos() {
       <div className="space-y-4 animate-pulse">
         <div className="h-20 rounded-2xl bg-slate-200 dark:bg-slate-800" />
         <div className="h-24 rounded-2xl bg-slate-200 dark:bg-slate-800" />
-        <div className="h-136 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-[34rem] rounded-2xl bg-slate-200 dark:bg-slate-800" />
       </div>
     );
   }
@@ -1321,6 +1278,72 @@ function RolesPermisos() {
     modo === "rol"
       ? permisosRolEditados
       : permisosEfectivosUsuario;
+
+
+  const tituloConfiguracion =
+    modo === "rol"
+      ? `Permisos de ${rolActual?.nombre ?? "rol"}`
+      : `Accesos de ${usuarioActual?.nombreCompleto ?? "usuario"}`;
+
+  const descripcionConfiguracion =
+    modo === "rol"
+      ? "Estos permisos se heredan automáticamente a todas las cuentas que tengan este rol."
+      : `@${usuarioActual?.username} · Rol principal: ${usuarioActual?.rol}. Los permisos heredados permanecen bloqueados; aquí solo se agregan accesos.`;
+
+  const controlesConfiguracion = (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        disabled={!hayCambios || guardando}
+        onClick={descartarCambios}
+        title="Descartar cambios"
+        aria-label="Descartar cambios"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-35 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
+      >
+        <X size={16} />
+      </button>
+
+      <button
+        type="button"
+        disabled={
+          !puedeRestablecer ||
+          guardando ||
+          restableciendo
+        }
+        onClick={() =>
+          setConfirmarRestablecimiento(
+            true,
+          )
+        }
+        title={
+          modo === "rol"
+            ? "Restablecer permisos iniciales"
+            : "Quitar roles y permisos adicionales"
+        }
+        aria-label="Restablecer configuración"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-300 bg-violet-50 text-violet-700 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-900/70 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
+      >
+        <History size={16} />
+      </button>
+
+      <button
+        type="button"
+        disabled={!hayCambios || guardando}
+        onClick={() =>
+          void guardarCambios()
+        }
+        title="Guardar cambios"
+        aria-label="Guardar cambios"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-roma-700 text-white shadow-sm transition-colors hover:bg-roma-800 disabled:cursor-not-allowed disabled:bg-roma-400 dark:disabled:bg-roma-950/60"
+      >
+        {guardando ? (
+          <LoaderCircle size={16} className="animate-spin" />
+        ) : (
+          <Save size={16} />
+        )}
+      </button>
+    </div>
+  );
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 pb-4">
@@ -1419,7 +1442,7 @@ function RolesPermisos() {
                       rol: rol.rol,
                     })
                   }
-                  className={`inline-flex h-12 w-45 items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all ${
+                  className={`inline-flex h-12 w-[180px] items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all ${
                     seleccionado
                       ? `${visual.colorBordeActivo} ${visual.colorFondoActivo} shadow-sm`
                       : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-950/40 dark:hover:border-slate-600 dark:hover:bg-slate-800"
@@ -1449,30 +1472,15 @@ function RolesPermisos() {
         </section>
       ) : (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] lg:items-end">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <div className="grid gap-3 lg:grid-cols-[minmax(280px,420px)_minmax(0,1fr)] lg:items-stretch">
+            <div className="flex min-w-0 flex-col justify-center">
+              <label
+                className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                htmlFor="usuarioPermisos"
+              >
                 Usuario a configurar
-              </p>
-              <div className="relative mt-2">
-                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input
-                  value={busquedaUsuario}
-                  onChange={(evento) =>
-                    setBusquedaUsuario(
-                      evento.target.value,
-                    )
-                  }
-                  placeholder="Buscar por nombre, usuario o rol"
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-800 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-violet-950/40"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400" htmlFor="usuarioPermisos">
-                Cuenta
               </label>
+
               <select
                 id="usuarioPermisos"
                 value={usuarioSeleccionadoId ?? ""}
@@ -1486,107 +1494,71 @@ function RolesPermisos() {
                 }
                 className="mt-2 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-violet-950/40"
               >
-                {opcionesUsuario.map(
+                {usuariosConfigurables.map(
                   (usuario) => (
                     <option
                       key={usuario.id}
                       value={usuario.id}
                     >
-                      {usuario.nombreCompleto} · @{usuario.username} · {usuario.estado}
+                      {usuario.nombreCompleto} · @{usuario.username} · {usuario.rol} · {usuario.estado}
                     </option>
                   ),
                 )}
               </select>
             </div>
-          </div>
 
-          {busquedaUsuario &&
-            usuariosFiltrados.length === 0 && (
-              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                No hay otras cuentas que coincidan con la búsqueda. La cuenta seleccionada se mantiene visible.
-              </p>
+            {usuarioActual && (
+              <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-violet-200 bg-violet-50/55 px-4 py-3 dark:border-violet-900/60 dark:bg-violet-950/20 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900 dark:text-white">
+                      {tituloConfiguracion}
+                    </h2>
+
+                    {hayCambios && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+                        Cambios sin guardar
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                    {descripcionConfiguracion}
+                  </p>
+                </div>
+
+                {controlesConfiguracion}
+              </div>
             )}
+          </div>
         </section>
       )}
 
       {(modo === "rol" ? rolActual : usuarioActual) && (
         <>
-          <div className="sticky top-0 z-20 flex min-w-0 max-w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                  {modo === "rol"
-                    ? `Permisos de ${rolActual?.nombre ?? "rol"}`
-                    : `Accesos de ${usuarioActual?.nombreCompleto ?? "usuario"}`}
-                </h2>
+          {modo === "rol" && rolActual && (
+            <div className="sticky top-0 z-20 flex min-w-0 max-w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-black text-slate-900 dark:text-white">
+                    {tituloConfiguracion}
+                  </h2>
 
-                {hayCambios && (
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
-                    Cambios sin guardar
-                  </span>
-                )}
+                  {hayCambios && (
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+                      Cambios sin guardar
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {descripcionConfiguracion}
+                </p>
               </div>
 
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {modo === "rol"
-                  ? "Estos permisos se heredan automáticamente a todas las cuentas que tengan este rol."
-                  : `@${usuarioActual?.username} · Rol principal: ${usuarioActual?.rol}. Los permisos heredados permanecen bloqueados; aquí solo se agregan accesos.`}
-              </p>
+              {controlesConfiguracion}
             </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                disabled={!hayCambios || guardando}
-                onClick={descartarCambios}
-                title="Descartar cambios"
-                aria-label="Descartar cambios"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-amber-300 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-35 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
-              >
-                <X size={16} />
-              </button>
-
-              <button
-                type="button"
-                disabled={
-                  !puedeRestablecer ||
-                  guardando ||
-                  restableciendo
-                }
-                onClick={() =>
-                  setConfirmarRestablecimiento(
-                    true,
-                  )
-                }
-                title={
-                  modo === "rol"
-                    ? "Restablecer permisos iniciales"
-                    : "Quitar roles y permisos adicionales"
-                }
-                aria-label="Restablecer configuración"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-violet-300 bg-violet-50 text-violet-700 transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-violet-900/70 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
-              >
-                <History size={16} />
-              </button>
-
-              <button
-                type="button"
-                disabled={!hayCambios || guardando}
-                onClick={() =>
-                  void guardarCambios()
-                }
-                title="Guardar cambios"
-                aria-label="Guardar cambios"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-roma-700 text-white shadow-sm transition-colors hover:bg-roma-800 disabled:cursor-not-allowed disabled:bg-roma-400 dark:disabled:bg-roma-950/60"
-              >
-                {guardando ? (
-                  <LoaderCircle size={16} className="animate-spin" />
-                ) : (
-                  <Save size={16} />
-                )}
-              </button>
-            </div>
-          </div>
+          )}
 
           {modo === "usuario" && usuarioActual && (
             <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">

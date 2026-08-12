@@ -554,17 +554,7 @@ export async function obtenerCajaAbiertaPorUsuario(
   return caja
     ? clonarSesion(caja)
     : null;
-}
-
-export async function listarCajasAbiertas():
-  Promise<SesionCaja[]> {
-  await esperar(250);
-
-  return obtenerCajasAbiertasPersistidas()
-    .map(clonarSesion);
-}
-
-export async function listarSesionesCaja(
+}export async function listarSesionesCaja(
   filtros: FiltroSesionesCaja = {},
 ): Promise<SesionCaja[]> {
   await esperar(300);

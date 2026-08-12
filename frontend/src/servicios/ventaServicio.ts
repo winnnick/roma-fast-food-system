@@ -445,24 +445,7 @@ function fechaEnRango(
   const desde = new Date(`${fechaDesde}T00:00:00`).getTime();
   const hasta = new Date(`${fechaHasta}T23:59:59.999`).getTime();
   return tiempo >= desde && tiempo <= hasta;
-}
-
-export async function listarLiquidacionesPedidosYa(): Promise<LiquidacionPedidosYa[]> {
-  await esperar(250);
-
-  return obtenerLiquidacionesPedidosYaPersistidas()
-    .sort(
-      (a, b) =>
-        new Date(b.fechaHoraRegistro).getTime() -
-        new Date(a.fechaHoraRegistro).getTime(),
-    )
-    .map((item) => ({
-      ...item,
-      ventaIds: [...item.ventaIds],
-    }));
-}
-
-export async function obtenerResumenPedidosYa(
+}export async function obtenerResumenPedidosYa(
   fechaDesde: string,
   fechaHasta: string,
 ): Promise<ResumenPedidosYaPeriodo> {

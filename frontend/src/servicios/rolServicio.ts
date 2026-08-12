@@ -679,30 +679,7 @@ export async function listarRoles(): Promise<
   await esperar(350);
 
   return obtenerRolesPersistidos();
-}
-
-export async function obtenerPermisosRol(
-  rol: RolUsuario,
-): Promise<PermisoSistema[]> {
-  if (rol === "Administrador") {
-    return [...permisosSistema];
-  }
-
-  const roles = obtenerRolesPersistidos();
-
-  const rolEncontrado = roles.find(
-    (configuracion) =>
-      configuracion.rol === rol,
-  );
-
-  if (!rolEncontrado) {
-    return [];
-  }
-
-  return [...rolEncontrado.permisos];
-}
-
-export async function obtenerPermisosRoles(
+}export async function obtenerPermisosRoles(
   rolesDelUsuario: readonly RolUsuario[],
 ): Promise<PermisoSistema[]> {
   const rolesUnicos = Array.from(
