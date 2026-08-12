@@ -11,14 +11,41 @@ import GestionProductos from "./GestionProductos";
 function Productos() {
   const { usuario } = useAuth();
 
-  const puedeGestionar =
+  const puedeCrear =
     usuario?.permisos.includes(
-      "PRODUCTOS_GESTIONAR",
+      "PRODUCTOS_CREAR",
     ) ?? false;
+
+  const puedeEditar =
+    usuario?.permisos.includes(
+      "PRODUCTOS_EDITAR",
+    ) ?? false;
+
+  const puedeCambiarEstado =
+    usuario?.permisos.includes(
+      "PRODUCTOS_DESACTIVAR",
+    ) ?? false;
+
+  const puedeGestionarRecetas =
+    usuario?.permisos.includes(
+      "INVENTARIO_RECETAS_GESTIONAR",
+    ) ?? false;
+
+  const puedeGestionarCategorias =
+    usuario?.permisos.includes(
+      "CATEGORIAS_GESTIONAR",
+    ) ?? false;
+
+  const tieneAcciones =
+    puedeCrear ||
+    puedeEditar ||
+    puedeCambiarEstado ||
+    puedeGestionarRecetas ||
+    puedeGestionarCategorias;
 
   return (
     <div className="space-y-4">
-      {!puedeGestionar && (
+      {!tieneAcciones && (
         <div
           className="
             flex items-start gap-3
@@ -46,7 +73,17 @@ function Productos() {
       )}
 
       <GestionProductos
-        puedeGestionar={puedeGestionar}
+        puedeCrear={puedeCrear}
+        puedeEditar={puedeEditar}
+        puedeCambiarEstado={
+          puedeCambiarEstado
+        }
+        puedeGestionarRecetas={
+          puedeGestionarRecetas
+        }
+        puedeGestionarCategorias={
+          puedeGestionarCategorias
+        }
       />
     </div>
   );

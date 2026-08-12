@@ -9,6 +9,7 @@ import {
   ClipboardList,
   DollarSign,
   Edit3,
+  FileDown,
   FilterX,
   Package,
   PackageCheck,
@@ -17,6 +18,9 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  Square,
+  CheckSquare,
+  X,
   TrendingDown,
 } from "lucide-react";
 
@@ -32,6 +36,10 @@ import { useAuth } from "../../contextos/AuthContext";
 import {
   auditarAccion,
 } from "../../servicios/auditoriaAccionesServicio";
+
+import {
+  descargarPdfReporte,
+} from "../../servicios/exportacionServicio";
 
 import {
   actualizarInsumoInventario,
@@ -52,6 +60,10 @@ import type {
   RegistrarEntradaInventarioDto,
   ResumenInventario,
 } from "../../tipos/inventario";
+
+import type {
+  ColumnaExportacion,
+} from "../../tipos/reportes";
 
 import Modal from "../../shared/ui/Modal";
 import ModalConfirmacion from "../../shared/ui/ModalConfirmacion";
@@ -120,9 +132,481 @@ function textoNivel(nivel: NivelStockInventario): string {
   return "Stock normal";
 }
 
+interface FilaReporteExistencias {
+  codigo: string;
+  nombre: string;
+  categoria: string;
+  existencia: string;
+  minimo: string;
+  estado: string;
+  faltante: string;
+  compraSugerida: string;
+}
+
+const COLUMNAS_REPORTE_EXISTENCIAS: ColumnaExportacion<FilaReporteExistencias>[] = [
+  {
+    encabezado: "Código",
+    obtenerValor: (fila) => fila.codigo,
+    peso: 0.7,
+  },
+  {
+    encabezado: "Insumo",
+    obtenerValor: (fila) => fila.nombre,
+    peso: 1.35,
+  },
+  {
+    encabezado: "Categoría",
+    obtenerValor: (fila) => fila.categoria,
+    peso: 0.9,
+  },
+  {
+    encabezado: "Existencia",
+    obtenerValor: (fila) => fila.existencia,
+    peso: 0.85,
+  },
+  {
+    encabezado: "Mínimo",
+    obtenerValor: (fila) => fila.minimo,
+    peso: 0.8,
+  },
+  {
+    encabezado: "Estado",
+    obtenerValor: (fila) => fila.estado,
+    peso: 0.85,
+  },
+  {
+    encabezado: "Faltante para mínimo",
+    obtenerValor: (fila) => fila.faltante,
+    peso: 1.0,
+  },
+  {
+    encabezado: "Compra mínima sugerida",
+    obtenerValor: (fila) => fila.compraSugerida,
+    peso: 1.15,
+  },
+];
+
+interface FormularioReporteExistenciasProps {
+  insumos: InsumoInventario[];
+  alCancelar: () => void;
+}
+
+function FormularioReporteExistencias({
+  insumos,
+  alCancelar,
+}: FormularioReporteExistenciasProps) {
+  const activos = useMemo(
+    () => insumos.filter((insumo) => insumo.estado === "Activo"),
+    [insumos],
+  );
+
+  const [busquedaReporte, setBusquedaReporte] = useState("");
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(
+    () => new Set<number>(),
+  );
+  const [errorReporte, setErrorReporte] = useState<string | null>(null);
+
+  const visiblesReporte = useMemo(() => {
+    const texto = busquedaReporte.trim().toLocaleLowerCase("es");
+
+    return activos.filter(
+      (insumo) =>
+        !texto ||
+        insumo.nombre.toLocaleLowerCase("es").includes(texto) ||
+        insumo.codigo.toLocaleLowerCase("es").includes(texto) ||
+        insumo.categoria.toLocaleLowerCase("es").includes(texto),
+    );
+  }, [activos, busquedaReporte]);
+
+  const insumosSeleccionados = activos.filter((insumo) =>
+    seleccionados.has(insumo.id),
+  );
+
+  const requierenReposicion = insumosSeleccionados.filter(
+    (insumo) =>
+      insumo.controlarStockBajo &&
+      insumo.stockActual < insumo.stockMinimo,
+  );
+
+  function alternarSeleccion(insumoId: number) {
+    setSeleccionados((actuales) => {
+      const siguientes = new Set(actuales);
+
+      if (siguientes.has(insumoId)) {
+        siguientes.delete(insumoId);
+      } else {
+        siguientes.add(insumoId);
+      }
+
+      return siguientes;
+    });
+    setErrorReporte(null);
+  }
+
+  function alternarTodosReporte() {
+    const todosSeleccionados =
+      activos.length > 0 &&
+      activos.every((insumo) => seleccionados.has(insumo.id));
+
+    setSeleccionados(
+      todosSeleccionados
+        ? new Set<number>()
+        : new Set(activos.map((insumo) => insumo.id)),
+    );
+    setErrorReporte(null);
+  }
+
+  function generarReporteExistencias() {
+    if (insumosSeleccionados.length === 0) {
+      setErrorReporte(
+        "Selecciona al menos un insumo para generar el reporte.",
+      );
+      return;
+    }
+
+    const registros: FilaReporteExistencias[] = insumosSeleccionados.map(
+      (insumo) => {
+        const nivelStock = calcularNivelStockInsumo(insumo);
+        const faltante = insumo.controlarStockBajo
+          ? Math.max(0, insumo.stockMinimo - insumo.stockActual)
+          : 0;
+
+        const presentaciones =
+          faltante > 0 && insumo.factorConversionCompra > 0
+            ? Math.ceil(faltante / insumo.factorConversionCompra)
+            : 0;
+
+        return {
+          codigo: insumo.codigo,
+          nombre: insumo.nombre,
+          categoria: insumo.categoria,
+          existencia: formatearCantidadOperativa(
+            insumo.stockActual,
+            insumo.unidadBase,
+          ),
+          minimo: insumo.controlarStockBajo
+            ? formatearCantidadOperativa(
+                insumo.stockMinimo,
+                insumo.unidadBase,
+              )
+            : "Sin límite",
+          estado: insumo.controlarStockBajo
+            ? textoNivel(nivelStock)
+            : "Sin control de mínimo",
+          faltante: !insumo.controlarStockBajo
+            ? "No calculado"
+            : faltante > 0
+              ? formatearCantidadOperativa(
+                  faltante,
+                  insumo.unidadBase,
+                )
+              : "No requiere",
+          compraSugerida: !insumo.controlarStockBajo
+            ? "No calculada"
+            : presentaciones > 0
+              ? `${presentaciones} × ${insumo.presentacionCompra}`
+              : "No requiere",
+        };
+      },
+    );
+
+    const fecha = new Date();
+    const nombreFecha = [
+      fecha.getFullYear(),
+      String(fecha.getMonth() + 1).padStart(2, "0"),
+      String(fecha.getDate()).padStart(2, "0"),
+    ].join("-");
+
+    descargarPdfReporte({
+      nombreArchivo: `existencias-inventario-${nombreFecha}`,
+      titulo: "Roma Fast Food - Existencias de inventario",
+      descripcion:
+        "Existencias registradas actualmente en el sistema para los insumos seleccionados. La reposición sugerida indica la compra mínima necesaria para alcanzar el stock mínimo configurado; no sustituye un conteo físico.",
+      registros,
+      columnas: COLUMNAS_REPORTE_EXISTENCIAS,
+      auditoria: {
+        modulo: "Inventario",
+        accion: "Generar PDF de existencias",
+        entidad: "Insumos",
+      },
+      resumen: [
+        {
+          etiqueta: "Insumos incluidos",
+          valor: String(registros.length),
+        },
+        {
+          etiqueta: "Requieren reposición",
+          valor: String(requierenReposicion.length),
+        },
+        {
+          etiqueta: "Sin reposición",
+          valor: String(registros.length - requierenReposicion.length),
+        },
+      ],
+    });
+
+    setErrorReporte(null);
+  }
+
+  return (
+    <div>
+      <div className="space-y-4 p-5 sm:p-6">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/25 dark:text-blue-200">
+          <p className="font-black">Qué muestra este reporte</p>
+          <p className="mt-1 leading-relaxed">
+            Usa las existencias registradas por el sistema. Para saber la cantidad física exacta debe realizarse y confirmarse un conteo físico.
+          </p>
+        </div>
+
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="relative">
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              type="search"
+              value={busquedaReporte}
+              placeholder="Buscar por nombre, código o categoría"
+              onChange={(evento) => setBusquedaReporte(evento.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:ring-red-950/50"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={alternarTodosReporte}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {activos.length > 0 && seleccionados.size === activos.length ? (
+              <CheckSquare size={17} />
+            ) : (
+              <Square size={17} />
+            )}
+            {activos.length > 0 && seleccionados.size === activos.length
+              ? "Deseleccionar todos"
+              : "Seleccionar todos"}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 text-xs font-black">
+          <span className="rounded-xl bg-slate-100 px-3 py-2 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            {insumosSeleccionados.length} seleccionados
+          </span>
+          <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300">
+            {requierenReposicion.length} requieren reposición
+          </span>
+        </div>
+
+        <div className="max-h-[44vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <div className="sticky top-0 z-10 hidden grid-cols-[34px_minmax(210px,1.25fr)_150px_150px_165px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 lg:grid">
+            <span />
+            <span>Insumo</span>
+            <span>Existencia</span>
+            <span>Stock mínimo</span>
+            <span>Reposición</span>
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {visiblesReporte.length === 0 ? (
+              <div className="p-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+                No hay insumos que coincidan con la búsqueda.
+              </div>
+            ) : (
+              visiblesReporte.map((insumo) => {
+                const seleccionado = seleccionados.has(insumo.id);
+                const faltante = insumo.controlarStockBajo
+                  ? Math.max(0, insumo.stockMinimo - insumo.stockActual)
+                  : 0;
+                const nivelStock = calcularNivelStockInsumo(insumo);
+
+                return (
+                  <label
+                    key={insumo.id}
+                    className={`grid cursor-pointer gap-3 px-4 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 lg:grid-cols-[34px_minmax(210px,1.25fr)_150px_150px_165px] lg:items-center ${
+                      seleccionado ? "" : "opacity-60"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={seleccionado}
+                      onChange={() => alternarSeleccion(insumo.id)}
+                      className="h-4 w-4 accent-red-700"
+                    />
+
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-slate-900 dark:text-white">
+                        {insumo.nombre}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-400">
+                        {insumo.codigo} · {insumo.categoria}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-400 lg:hidden">
+                        Existencia
+                      </p>
+                      <p className="font-black text-slate-800 dark:text-slate-100">
+                        {formatearCantidadOperativa(
+                          insumo.stockActual,
+                          insumo.unidadBase,
+                        )}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-400 lg:hidden">
+                        Stock mínimo
+                      </p>
+                      <p className="font-bold text-slate-700 dark:text-slate-200">
+                        {insumo.controlarStockBajo
+                          ? formatearCantidadOperativa(
+                              insumo.stockMinimo,
+                              insumo.unidadBase,
+                            )
+                          : "Sin límite"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-slate-400 lg:hidden">
+                        Reposición
+                      </p>
+                      {insumo.controlarStockBajo ? (
+                        faltante > 0 ? (
+                          <div>
+                            <p className="font-black text-amber-700 dark:text-amber-300">
+                              {formatearCantidadOperativa(
+                                faltante,
+                                insumo.unidadBase,
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              para alcanzar el mínimo
+                            </p>
+                          </div>
+                        ) : (
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${claseNivel(nivelStock)} dark:bg-opacity-20`}>
+                            No requiere
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-400">
+                          No calculada
+                        </span>
+                      )}
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {errorReporte && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {errorReporte}
+          </div>
+        )}
+      </div>
+
+      <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/95 px-5 py-4 sm:flex-row sm:justify-end sm:px-6 dark:border-slate-700 dark:bg-slate-950/95">
+        <button
+          type="button"
+          onClick={alCancelar}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <X size={18} />
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          disabled={insumosSeleccionados.length === 0}
+          onClick={generarReporteExistencias}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <FileDown size={18} />
+          Generar PDF
+        </button>
+      </footer>
+    </div>
+  );
+}
+
 function Inventario() {
   const { usuario } = useAuth();
-  const puedeGestionar = usuario?.permisos.includes("INVENTARIO_GESTIONAR") ?? false;
+
+  const puedeCrearInsumos =
+    usuario?.permisos.includes(
+      "INVENTARIO_INSUMOS_CREAR",
+    ) ?? false;
+
+  const puedeEditarInsumos =
+    usuario?.permisos.includes(
+      "INVENTARIO_INSUMOS_EDITAR",
+    ) ?? false;
+
+  const puedeCambiarEstadoInsumos =
+    usuario?.permisos.includes(
+      "INVENTARIO_ESTADO_INSUMO",
+    ) ?? false;
+
+  const puedeRegistrarEntradas =
+    usuario?.permisos.includes(
+      "INVENTARIO_ENTRADAS",
+    ) ?? false;
+
+  const puedeAumentarStock =
+    usuario?.permisos.includes(
+      "INVENTARIO_AJUSTES_AUMENTAR",
+    ) ?? false;
+
+  const puedeDisminuirStock =
+    usuario?.permisos.includes(
+      "INVENTARIO_AJUSTES_DISMINUIR",
+    ) ?? false;
+
+  const puedeVerRecetas =
+    usuario?.permisos.includes(
+      "INVENTARIO_RECETAS_VER",
+    ) ?? false;
+
+  const puedeGestionarRecetas =
+    usuario?.permisos.includes(
+      "INVENTARIO_RECETAS_GESTIONAR",
+    ) ?? false;
+
+  const puedeVerMovimientos =
+    usuario?.permisos.includes(
+      "INVENTARIO_MOVIMIENTOS_VER",
+    ) ?? false;
+
+  const puedeVerConteos =
+    usuario?.permisos.includes(
+      "INVENTARIO_CONTEOS_VER",
+    ) ?? false;
+
+  const puedeRegistrarConteos =
+    usuario?.permisos.includes(
+      "INVENTARIO_CONTEOS_REGISTRAR",
+    ) ?? false;
+
+  const puedeExportarReportes =
+    usuario?.permisos.includes(
+      "REPORTES_EXPORTAR",
+    ) ?? false;
+
+  const puedeAjustarStock =
+    puedeAumentarStock ||
+    puedeDisminuirStock;
+
+  const tieneAccionesInsumo =
+    puedeRegistrarEntradas ||
+    puedeAjustarStock ||
+    puedeEditarInsumos ||
+    puedeCambiarEstadoInsumos;
 
   const [pestana, setPestana] = useState<Pestana>("resumen");
   const [insumos, setInsumos] = useState<InsumoInventario[]>([]);
@@ -139,8 +623,10 @@ function Inventario() {
   const [paginaInsumos, setPaginaInsumos] = useState(1);
 
   const [modalInsumo, setModalInsumo] = useState(false);
+  const [modalReporteExistencias, setModalReporteExistencias] = useState(false);
   const [insumoSeleccionado, setInsumoSeleccionado] = useState<InsumoInventario | null>(null);
-  const [insumoEntrada, setInsumoEntrada] = useState<InsumoInventario | null>(null);
+  const [modalEntradas, setModalEntradas] = useState(false);
+  const [insumoEntradaInicialId, setInsumoEntradaInicialId] = useState<number | null>(null);
   const [insumoAjuste, setInsumoAjuste] = useState<InsumoInventario | null>(null);
   const [accionEstado, setAccionEstado] = useState<AccionEstado | null>(null);
 
@@ -223,13 +709,13 @@ function Inventario() {
   );
 
   function abrirNuevo() {
-    if (!puedeGestionar) return;
+    if (!puedeCrearInsumos) return;
     setInsumoSeleccionado(null);
     setModalInsumo(true);
   }
 
   function abrirEditar(insumo: InsumoInventario) {
-    if (!puedeGestionar) return;
+    if (!puedeEditarInsumos) return;
     setInsumoSeleccionado(insumo);
     setModalInsumo(true);
   }
@@ -240,8 +726,28 @@ function Inventario() {
     setInsumoSeleccionado(null);
   }
 
+  function abrirEntradas(insumo?: InsumoInventario) {
+    if (!puedeRegistrarEntradas) return;
+    setInsumoEntradaInicialId(insumo?.id ?? null);
+    setModalEntradas(true);
+  }
+
+  function cerrarEntradas() {
+    if (procesando) return;
+    setModalEntradas(false);
+    setInsumoEntradaInicialId(null);
+  }
+
   async function guardarInsumo(datos: DatosFormularioInsumo) {
-    if (!usuario || !puedeGestionar) return;
+    if (!usuario) return;
+
+    if (
+      insumoSeleccionado
+        ? !puedeEditarInsumos
+        : !puedeCrearInsumos
+    ) {
+      return;
+    }
 
     try {
       setProcesando(true);
@@ -337,40 +843,58 @@ function Inventario() {
     }
   }
 
-  async function guardarEntrada(datos: RegistrarEntradaInventarioDto) {
-    if (!usuario || !puedeGestionar) return;
+  async function guardarEntradas(datosLista: RegistrarEntradaInventarioDto[]) {
+    if (!usuario || !puedeRegistrarEntradas || datosLista.length === 0) return;
 
     try {
       setProcesando(true);
-      const movimiento = await registrarEntradaInventario(datos, usuario);
 
-      await auditarAccion(
-        {
-          modulo: "Inventario",
-          accion: "Registrar entrada",
-          entidad: "Movimiento de inventario",
-          entidadId: movimiento.id,
-          descripcion:
-            `${usuario.nombreCompleto} registró una entrada de ${formatearCantidadInventario(movimiento.cantidad, movimiento.unidadBase)} para ${movimiento.insumoNombre}.`,
-          datosPosteriores: movimiento,
-        },
-        usuario,
-      );
+      const movimientos = [];
 
-      setInsumoEntrada(null);
-      setNotificacion({
-        tipo: "exito",
-        titulo: "Entrada registrada",
-        mensaje: `${movimiento.insumoNombre} quedó con ${formatearCantidadOperativa(
-          movimiento.stockPosterior,
-          movimiento.unidadBase,
-        )}.`,
-      });
+      for (const datos of datosLista) {
+        const movimiento = await registrarEntradaInventario(datos, usuario);
+        movimientos.push(movimiento);
+
+        await auditarAccion(
+          {
+            modulo: "Inventario",
+            accion: "Registrar entrada",
+            entidad: "Movimiento de inventario",
+            entidadId: movimiento.id,
+            descripcion:
+              `${usuario.nombreCompleto} registró una entrada de ${formatearCantidadInventario(movimiento.cantidad, movimiento.unidadBase)} para ${movimiento.insumoNombre}.`,
+            datosPosteriores: movimiento,
+          },
+          usuario,
+        );
+      }
+
+      setModalEntradas(false);
+      setInsumoEntradaInicialId(null);
+
+      if (movimientos.length === 1) {
+        const movimiento = movimientos[0];
+        setNotificacion({
+          tipo: "exito",
+          titulo: "Entrada registrada",
+          mensaje: `${movimiento.insumoNombre} quedó con ${formatearCantidadOperativa(
+            movimiento.stockPosterior,
+            movimiento.unidadBase,
+          )}.`,
+        });
+      } else {
+        setNotificacion({
+          tipo: "exito",
+          titulo: "Entradas registradas",
+          mensaje: `Se registraron correctamente ${movimientos.length} entradas de inventario.`,
+        });
+      }
+
       await cargarDatos();
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
-        titulo: "No se pudo registrar la entrada",
+        titulo: "No se pudieron registrar las entradas",
         mensaje: mensajeError(error),
       });
     } finally {
@@ -379,7 +903,14 @@ function Inventario() {
   }
 
   async function guardarAjuste(datos: RegistrarAjusteManualInventarioDto) {
-    if (!usuario || !puedeGestionar) return;
+    if (!usuario) return;
+
+    const tienePermisoAjuste =
+      datos.cantidadAjuste > 0
+        ? puedeAumentarStock
+        : puedeDisminuirStock;
+
+    if (!tienePermisoAjuste) return;
 
     try {
       setProcesando(true);
@@ -421,7 +952,11 @@ function Inventario() {
   }
 
   async function confirmarEstado() {
-    if (!usuario || !accionEstado || !puedeGestionar) return;
+    if (
+      !usuario ||
+      !accionEstado ||
+      !puedeCambiarEstadoInsumos
+    ) return;
 
     try {
       setProcesando(true);
@@ -484,8 +1019,8 @@ function Inventario() {
       <div className="space-y-4 animate-pulse">
         <div className="h-16 rounded-2xl bg-slate-200 dark:bg-slate-800" />
         <div className="grid gap-4 xl:grid-cols-2">
-          <div className="h-[34rem] rounded-3xl bg-slate-200 dark:bg-slate-800" />
-          <div className="h-[34rem] rounded-3xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-136 rounded-3xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-136 rounded-3xl bg-slate-200 dark:bg-slate-800" />
         </div>
       </div>
     );
@@ -518,11 +1053,39 @@ function Inventario() {
   });
 
   const pestanas = [
-    { id: "resumen" as const, etiqueta: "Resumen", icono: Activity, contador: resumen.alertas.length },
-    { id: "insumos" as const, etiqueta: "Insumos", icono: Package, contador: insumos.length },
-    { id: "recetas" as const, etiqueta: "Recetas", icono: ClipboardList },
-    { id: "movimientos" as const, etiqueta: "Movimientos", icono: ArrowDownUp },
-    { id: "conteos" as const, etiqueta: "Conteos físicos", icono: ClipboardCheck },
+    {
+      id: "resumen" as const,
+      etiqueta: "Resumen",
+      icono: Activity,
+      contador: resumen.alertas.length,
+    },
+    {
+      id: "insumos" as const,
+      etiqueta: "Insumos",
+      icono: Package,
+      contador: insumos.length,
+    },
+    ...(puedeVerRecetas
+      ? [{
+          id: "recetas" as const,
+          etiqueta: "Recetas",
+          icono: ClipboardList,
+        }]
+      : []),
+    ...(puedeVerMovimientos
+      ? [{
+          id: "movimientos" as const,
+          etiqueta: "Movimientos",
+          icono: ArrowDownUp,
+        }]
+      : []),
+    ...(puedeVerConteos
+      ? [{
+          id: "conteos" as const,
+          etiqueta: "Conteos físicos",
+          icono: ClipboardCheck,
+        }]
+      : []),
   ];
 
   return (
@@ -531,15 +1094,6 @@ function Inventario() {
         notificacion={notificacion}
         alCerrar={() => setNotificacion(null)}
       />
-
-      {!puedeGestionar && (
-        <section className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900/60 dark:bg-blue-950/30">
-          <p className="text-sm font-bold text-blue-900 dark:text-blue-200">Modo de consulta</p>
-          <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
-            Tu rol puede revisar existencias, pero no registrar ni modificar movimientos.
-          </p>
-        </section>
-      )}
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900">
         <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50/90 p-3 dark:border-slate-700 dark:bg-slate-950/50" aria-label="Secciones del inventario">
@@ -570,7 +1124,7 @@ function Inventario() {
         </nav>
 
         {pestana === "resumen" && (
-          <div className="grid min-h-[36rem] gap-4 p-4 xl:grid-cols-2">
+          <div className={`grid min-h-144 gap-4 p-4 ${puedeVerMovimientos ? "xl:grid-cols-2" : "grid-cols-1"}`}>
             <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-950/25">
               <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
@@ -639,27 +1193,32 @@ function Inventario() {
                             </div>
                           </div>
 
-                          {puedeGestionar && (
+                          {(puedeRegistrarEntradas || puedeEditarInsumos) && (
                             <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                title="Registrar entrada"
-                                aria-label={`Registrar entrada de ${insumo.nombre}`}
-                                disabled={insumo.estado === "Inactivo"}
-                                onClick={() => setInsumoEntrada(insumo)}
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                              >
-                                <PackagePlus size={17} />
-                              </button>
-                              <button
-                                type="button"
-                                title="Configurar insumo"
-                                aria-label={`Configurar ${insumo.nombre}`}
-                                onClick={() => abrirEditar(insumo)}
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-                              >
-                                <Edit3 size={17} />
-                              </button>
+                              {puedeRegistrarEntradas && (
+                                <button
+                                  type="button"
+                                  title="Registrar entrada"
+                                  aria-label={`Registrar entrada de ${insumo.nombre}`}
+                                  disabled={insumo.estado === "Inactivo"}
+                                  onClick={() => abrirEntradas(insumo)}
+                                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  <PackagePlus size={17} />
+                                </button>
+                              )}
+
+                              {puedeEditarInsumos && (
+                                <button
+                                  type="button"
+                                  title="Configurar insumo"
+                                  aria-label={`Configurar ${insumo.nombre}`}
+                                  onClick={() => abrirEditar(insumo)}
+                                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                                >
+                                  <Edit3 size={17} />
+                                </button>
+                              )}
                             </div>
                           )}
                         </article>
@@ -670,7 +1229,8 @@ function Inventario() {
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-950/25">
+            {puedeVerMovimientos && (
+              <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-950/25">
               <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
                   <h2 className="flex items-center gap-2 font-black text-slate-900 dark:text-white">
@@ -705,6 +1265,18 @@ function Inventario() {
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {fechaHora(movimiento.fechaHora)} · {movimiento.usuarioNombre}
                           </p>
+                          <p
+                            className="mt-1 truncate text-xs font-semibold text-slate-600 dark:text-slate-300"
+                            title={
+                              movimiento.tipo === "Consumo automático" && movimiento.numeroPedido
+                                ? `Pedido ${movimiento.numeroPedido}`
+                                : movimiento.motivo?.trim() || "Sin detalle adicional"
+                            }
+                          >
+                            {movimiento.tipo === "Consumo automático" && movimiento.numeroPedido
+                              ? `Pedido ${movimiento.numeroPedido}`
+                              : movimiento.motivo?.trim() || "Sin detalle adicional"}
+                          </p>
                         </div>
                         <div className="text-left sm:text-right">
                           <p className={`font-black ${movimiento.cantidad < 0 ? "text-red-600 dark:text-red-300" : "text-emerald-600 dark:text-emerald-300"}`}>
@@ -717,12 +1289,13 @@ function Inventario() {
                   </div>
                 )}
               </div>
-            </section>
+              </section>
+            )}
           </div>
         )}
 
         {pestana === "insumos" && (
-          <div className="min-h-[34rem]">
+          <div className="min-h-136">
             <header className="flex flex-col gap-4 border-b border-slate-200 p-4 dark:border-slate-700 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <h2 className="text-xl font-black text-slate-900 dark:text-white">Insumos</h2>
@@ -738,7 +1311,26 @@ function Inventario() {
                 >
                   <RefreshCw size={18} />
                 </button>
-                {puedeGestionar && (
+                {puedeExportarReportes && (
+                  <button
+                    type="button"
+                    onClick={() => setModalReporteExistencias(true)}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                  >
+                    <FileDown size={18} />
+                    Reporte de existencias
+                  </button>
+                )}
+                {puedeRegistrarEntradas && (
+                  <button
+                    type="button"
+                    onClick={() => abrirEntradas()}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700"
+                  >
+                    <PackagePlus size={18} /> Registrar entradas
+                  </button>
+                )}
+                {puedeCrearInsumos && (
                   <button
                     type="button"
                     onClick={abrirNuevo}
@@ -803,7 +1395,7 @@ function Inventario() {
                       ? Math.max(0, Math.min(100, (insumo.stockActual / insumo.stockMinimo) * 100))
                       : 100;
                     return (
-                      <article key={insumo.id} className={`grid min-h-[5.75rem] gap-4 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/60 lg:grid-cols-[minmax(210px,0.85fr)_minmax(390px,1.6fr)_96px_190px] lg:items-center ${insumo.estado === "Inactivo" ? "opacity-65" : ""}`}>
+                      <article key={insumo.id} className={`grid min-h-23 gap-4 px-4 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/60 lg:grid-cols-[minmax(210px,0.85fr)_minmax(390px,1.6fr)_96px_190px] lg:items-center ${insumo.estado === "Inactivo" ? "opacity-65" : ""}`}>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-black text-slate-900 dark:text-white">{insumo.nombre}</p>
@@ -841,14 +1433,22 @@ function Inventario() {
                         </div>
 
                         <div className="flex items-center justify-start gap-2 lg:justify-center">
-                          {puedeGestionar ? (
+                          {tieneAccionesInsumo ? (
                             <>
-                              <button type="button" title="Registrar entrada" aria-label={`Registrar entrada de ${insumo.nombre}`} disabled={insumo.estado === "Inactivo"} onClick={() => setInsumoEntrada(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><PackagePlus size={17} /></button>
-                              <button type="button" title="Registrar ajuste" aria-label={`Registrar ajuste de ${insumo.nombre}`} onClick={() => setInsumoAjuste(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm transition hover:bg-blue-700"><ArrowLeftRight size={17} /></button>
-                              <button type="button" title="Configurar insumo" aria-label={`Configurar ${insumo.nombre}`} onClick={() => abrirEditar(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600"><Edit3 size={17} /></button>
-                              <button type="button" title={insumo.estado === "Activo" ? "Desactivar insumo" : "Activar insumo"} aria-label={`${insumo.estado === "Activo" ? "Desactivar" : "Activar"} ${insumo.nombre}`} onClick={() => setAccionEstado({ insumo, nuevoEstado: insumo.estado === "Activo" ? "Inactivo" : "Activo" })} className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-sm transition ${insumo.estado === "Activo" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
-                                {insumo.estado === "Activo" ? <CircleOff size={17} /> : <PackageCheck size={17} />}
-                              </button>
+                              {puedeRegistrarEntradas && (
+                                <button type="button" title="Registrar entrada" aria-label={`Registrar entrada de ${insumo.nombre}`} disabled={insumo.estado === "Inactivo"} onClick={() => abrirEntradas(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><PackagePlus size={17} /></button>
+                              )}
+                              {puedeAjustarStock && (
+                                <button type="button" title="Registrar ajuste" aria-label={`Registrar ajuste de ${insumo.nombre}`} onClick={() => setInsumoAjuste(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm transition hover:bg-blue-700"><ArrowLeftRight size={17} /></button>
+                              )}
+                              {puedeEditarInsumos && (
+                                <button type="button" title="Configurar insumo" aria-label={`Configurar ${insumo.nombre}`} onClick={() => abrirEditar(insumo)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600"><Edit3 size={17} /></button>
+                              )}
+                              {puedeCambiarEstadoInsumos && (
+                                <button type="button" title={insumo.estado === "Activo" ? "Desactivar insumo" : "Activar insumo"} aria-label={`${insumo.estado === "Activo" ? "Desactivar" : "Activar"} ${insumo.nombre}`} onClick={() => setAccionEstado({ insumo, nuevoEstado: insumo.estado === "Activo" ? "Inactivo" : "Activo" })} className={`inline-flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-sm transition ${insumo.estado === "Activo" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
+                                  {insumo.estado === "Activo" ? <CircleOff size={17} /> : <PackageCheck size={17} />}
+                                </button>
+                              )}
                             </>
                           ) : <span className="text-xs font-semibold text-slate-400">Solo consulta</span>}
                         </div>
@@ -896,18 +1496,41 @@ function Inventario() {
           </div>
         )}
 
-        {pestana === "recetas" && (
-          <PanelRecetas puedeGestionar={puedeGestionar} alNotificar={setNotificacion} alCambio={cargarDatos} />
+        {pestana === "recetas" && puedeVerRecetas && (
+          <PanelRecetas
+            puedeGestionarRecetas={puedeGestionarRecetas}
+            alNotificar={setNotificacion}
+            alCambio={cargarDatos}
+          />
         )}
 
-        {pestana === "movimientos" && (
+        {pestana === "movimientos" && puedeVerMovimientos && (
           <PanelMovimientos alNotificar={setNotificacion} />
         )}
 
-        {pestana === "conteos" && (
-          <PanelConteos puedeGestionar={puedeGestionar} alNotificar={setNotificacion} alCambio={cargarDatos} />
+        {pestana === "conteos" && puedeVerConteos && (
+          <PanelConteos
+            puedeRegistrar={puedeRegistrarConteos}
+            alNotificar={setNotificacion}
+            alCambio={cargarDatos}
+          />
         )}
       </section>
+
+      <Modal
+        abierto={modalReporteExistencias}
+        titulo="Reporte de existencias"
+        descripcion="Selecciona los insumos que deseas incluir y genera un PDF para revisar stock y necesidades de reposición."
+        ancho="grande"
+        alCerrar={() => setModalReporteExistencias(false)}
+      >
+        {modalReporteExistencias && (
+          <FormularioReporteExistencias
+            insumos={insumos}
+            alCancelar={() => setModalReporteExistencias(false)}
+          />
+        )}
+      </Modal>
 
       <Modal
         abierto={modalInsumo}
@@ -920,27 +1543,27 @@ function Inventario() {
           key={insumoSeleccionado?.id ?? "nuevo"}
           insumo={insumoSeleccionado}
           cargando={procesando}
+          puedeRegistrarStockInicial={puedeRegistrarEntradas}
           alGuardar={guardarInsumo}
           alCancelar={cerrarInsumo}
         />
       </Modal>
 
       <Modal
-        abierto={Boolean(insumoEntrada)}
-        titulo={insumoEntrada ? `Entrada de ${insumoEntrada.nombre}` : "Registrar entrada"}
-        descripcion="La cantidad se suma incluso si el saldo actual es negativo."
-        ancho="mediano"
-        alCerrar={() => { if (!procesando) setInsumoEntrada(null); }}
+        abierto={modalEntradas}
+        titulo="Registrar entradas de inventario"
+        descripcion="Selecciona uno o varios insumos recibidos y registra toda la recepción en una sola operación."
+        ancho="grande"
+        alCerrar={cerrarEntradas}
       >
-        {insumoEntrada && (
-          <FormularioEntradaInventario
-            key={insumoEntrada.id}
-            insumo={insumoEntrada}
-            cargando={procesando}
-            alGuardar={guardarEntrada}
-            alCancelar={() => setInsumoEntrada(null)}
-          />
-        )}
+        <FormularioEntradaInventario
+          key={`${insumoEntradaInicialId ?? "lote"}-${modalEntradas ? "abierto" : "cerrado"}`}
+          insumos={insumos}
+          insumoInicialId={insumoEntradaInicialId}
+          cargando={procesando}
+          alGuardar={guardarEntradas}
+          alCancelar={cerrarEntradas}
+        />
       </Modal>
 
       <Modal
@@ -955,6 +1578,8 @@ function Inventario() {
             key={insumoAjuste.id}
             insumo={insumoAjuste}
             cargando={procesando}
+            puedeAumentar={puedeAumentarStock}
+            puedeDisminuir={puedeDisminuirStock}
             alGuardar={guardarAjuste}
             alCancelar={() => setInsumoAjuste(null)}
           />

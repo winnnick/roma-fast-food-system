@@ -539,7 +539,7 @@ function GestionCategorias({
               </p>
             </div>
           ) : (
-            <div className="min-h-[24rem] divide-y divide-slate-200 bg-white dark:divide-slate-800 dark:bg-slate-900">
+            <div className="min-h-96 divide-y divide-slate-200 bg-white dark:divide-slate-800 dark:bg-slate-900">
               {categoriasFiltradas.map(
                 (categoria) => {
                   const conteo =

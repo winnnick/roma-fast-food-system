@@ -8,6 +8,7 @@ import {
   History,
   LoaderCircle,
   Minus,
+  PackageCheck,
   Plus,
   QrCode,
   ReceiptText,
@@ -41,6 +42,7 @@ import type {
 } from "../../tipos/cliente";
 
 import type {
+  CanalVenta,
   CrearVentaDto,
   TipoClienteVenta,
 } from "../../tipos/venta";
@@ -62,6 +64,7 @@ interface FormularioVentaProps {
   clientes: Cliente[];
   cargando: boolean;
   puedeCobrar: boolean;
+  puedeVerHistorial: boolean;
   cajaAbierta: SesionCaja | null;
 
   alGuardar: (
@@ -91,9 +94,11 @@ interface ResumenConfirmacion {
   totalFinal: number;
   montoQr: number;
   efectivoAplicado: number;
+  totalAbono: number;
   montoRecibido: number;
   cambio: number;
   faltante: number;
+  pagoCompleto: boolean;
 }
 
 const MAXIMO_RESULTADOS_PRODUCTOS = 8;
@@ -148,6 +153,7 @@ function FormularioVenta({
   clientes,
   cargando,
   puedeCobrar,
+  puedeVerHistorial,
   cajaAbierta,
   alGuardar,
   alLimpiar,
@@ -158,6 +164,12 @@ function FormularioVenta({
 
   const buscadorClienteRef =
     useRef<HTMLInputElement>(null);
+
+  const [canalVenta, setCanalVenta] =
+    useState<CanalVenta>("Local");
+
+  const [referenciaPedidosYa, setReferenciaPedidosYa] =
+    useState("");
 
   const [
     busquedaProducto,
@@ -263,9 +275,13 @@ function FormularioVenta({
       productos.filter(
         (producto) =>
           producto.estado === "Activo" &&
-          producto.disponible,
+          producto.disponible &&
+          (canalVenta === "Local" ||
+            (producto.disponiblePedidosYa &&
+              producto.precioPedidosYa !== null &&
+              producto.precioPedidosYa > 0)),
       ),
-    [productos],
+    [canalVenta, productos],
   );
 
   const resultadosProductos = useMemo(
@@ -452,27 +468,43 @@ function FormularioVenta({
       ),
     );
 
-  const efectivoNecesario =
+  const montoQrAplicado =
     redondearMoneda(
-      Math.max(
-        0,
-        totalFinal - montoQrNumerico,
+      Math.min(
+        montoQrNumerico,
+        totalFinal,
       ),
+    );
+
+  const efectivoAplicado =
+    redondearMoneda(
+      Math.min(
+        montoRecibidoNumerico,
+        Math.max(
+          0,
+          totalFinal - montoQrAplicado,
+        ),
+      ),
+    );
+
+  const totalAbono =
+    redondearMoneda(
+      montoQrAplicado +
+        efectivoAplicado,
     );
 
   const cambio = redondearMoneda(
     Math.max(
       0,
       montoRecibidoNumerico -
-        efectivoNecesario,
+        efectivoAplicado,
     ),
   );
 
   const faltante = redondearMoneda(
     Math.max(
       0,
-      efectivoNecesario -
-        montoRecibidoNumerico,
+      totalFinal - totalAbono,
     ),
   );
 
@@ -481,45 +513,43 @@ function FormularioVenta({
       !puedeCobrar ||
       !cajaAbierta ||
       totalFinal <= 0 ||
-      montoQrNumerico > totalFinal
+      montoQrNumerico > totalFinal ||
+      totalAbono <= 0
     ) {
       return null;
     }
 
     if (
-      montoQrNumerico === totalFinal
-    ) {
-      return "QR" as const;
-    }
-
-    if (
-      montoQrNumerico === 0 &&
-      montoRecibidoNumerico >=
-        totalFinal
-    ) {
-      return "Efectivo" as const;
-    }
-
-    if (
-      montoQrNumerico > 0 &&
-      montoQrNumerico < totalFinal &&
-      montoRecibidoNumerico >=
-        efectivoNecesario
+      montoQrAplicado > 0 &&
+      efectivoAplicado > 0
     ) {
       return "Mixto" as const;
     }
 
-    return null;
+    if (montoQrAplicado > 0) {
+      return "QR" as const;
+    }
+
+    return "Efectivo" as const;
   }, [
     cajaAbierta,
-    efectivoNecesario,
+    efectivoAplicado,
+    montoQrAplicado,
     montoQrNumerico,
-    montoRecibidoNumerico,
     puedeCobrar,
+    totalAbono,
     totalFinal,
   ]);
 
+  const pagoCompleto =
+    metodoDetectado !== null &&
+    faltante <= 0;
+
+  const registroHabilitado =
+    cajaAbierta !== null;
+
   const pagoHabilitado =
+    canalVenta === "Local" &&
     puedeCobrar &&
     cajaAbierta !== null;
 
@@ -615,7 +645,10 @@ function FormularioVenta({
           productoId: producto.id,
           codigo: producto.codigo,
           nombre: producto.nombre,
-          precio: producto.precio,
+          precio:
+            canalVenta === "PedidosYa"
+              ? (producto.precioPedidosYa ?? producto.precio)
+              : producto.precio,
           cantidad: 1,
           observacion: "",
         },
@@ -809,6 +842,8 @@ function FormularioVenta({
   }
 
   function limpiarFormulario() {
+    setCanalVenta("Local");
+    setReferenciaPedidosYa("");
     setBusquedaProducto("");
     setResultadosProductoAbiertos(
       false,
@@ -838,13 +873,6 @@ function FormularioVenta({
 
   function prepararResumen():
     ResumenConfirmacion | null {
-    if (!puedeCobrar) {
-      setError(
-        "Tu usuario no tiene permiso para operar una caja y no puede registrar ventas.",
-      );
-      return null;
-    }
-
     if (!cajaAbierta) {
       setError(
         "Debes abrir tu propia caja antes de registrar una venta.",
@@ -904,6 +932,7 @@ function FormularioVenta({
     }
 
     if (
+      canalVenta === "Local" &&
       montoQrNumerico > totalFinal
     ) {
       setError(
@@ -913,6 +942,7 @@ function FormularioVenta({
     }
 
     if (
+      canalVenta === "Local" &&
       tipoDescuento !== "Ninguno"
     ) {
       if (
@@ -957,13 +987,18 @@ function FormularioVenta({
 
       if (!metodoDetectado) {
         setError(
-          "Para aplicar un descuento debes completar el cobro. Los pedidos pendientes conservan su total original.",
+          "Para aplicar un descuento debes registrar al menos un abono. El descuento quedará fijado desde el primer pago.",
         );
         return null;
       }
     }
 
     const datos: CrearVentaDto = {
+      canalVenta,
+      referenciaPedidosYa:
+        canalVenta === "PedidosYa"
+          ? referenciaPedidosYa.trim() || null
+          : null,
       tipoCliente:
         tipoClienteActual,
       clienteId:
@@ -992,7 +1027,7 @@ function FormularioVenta({
     };
 
     const cobro: DatosCobroIntegrado | null =
-      metodoDetectado
+      canalVenta === "Local" && metodoDetectado
         ? {
             tipoDescuento,
             valorDescuento:
@@ -1007,10 +1042,13 @@ function FormularioVenta({
                 : motivoDescuento.trim(),
             metodoPago:
               metodoDetectado,
+
+            montoQr:
+              montoQrAplicado,
+
             montoEfectivo:
-              metodoDetectado === "QR"
-                ? 0
-                : efectivoNecesario,
+              efectivoAplicado,
+
             montoRecibido:
               metodoDetectado === "QR"
                 ? 0
@@ -1045,15 +1083,15 @@ function FormularioVenta({
       totalFinal:
         cobro ? totalFinal : subtotal,
       montoQr:
-        cobro &&
-        cobro.metodoPago !==
-          "Efectivo"
-          ? montoQrNumerico
+        cobro
+          ? cobro.montoQr
           : 0,
       efectivoAplicado:
         cobro
           ? cobro.montoEfectivo
           : 0,
+      totalAbono:
+        cobro ? totalAbono : 0,
       montoRecibido:
         cobro
           ? cobro.montoRecibido
@@ -1061,7 +1099,9 @@ function FormularioVenta({
       cambio:
         cobro ? cambio : 0,
       faltante:
-        cobro ? 0 : faltante,
+        faltante,
+      pagoCompleto:
+        cobro ? pagoCompleto : false,
     };
   }
 
@@ -1098,9 +1138,165 @@ function FormularioVenta({
       <form
         onSubmit={manejarEnvio}
         noValidate
-        className="flex min-h-[48rem] flex-col gap-4 p-4 sm:p-5"
+        className="flex min-h-192 flex-col gap-4 p-4 sm:p-5"
       >
-        <section className="grid gap-3 lg:grid-cols-2">
+        <section className="flex h-120 min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between in-[.tema-oscuro_&]:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-roma-50 text-roma-700 in-[.tema-oscuro_&]:bg-roma-500/10 in-[.tema-oscuro_&]:text-roma-300">
+                <ShoppingCart size={20} />
+              </div>
+
+              <div>
+                <h2 className="font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
+                  Detalle del pedido
+                </h2>
+                <p className="text-xs text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                  {carrito.length} producto(s) · {cantidadUnidades} unidad(es)
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-950 px-4 py-2 text-right text-white">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Subtotal
+              </p>
+              <p className="text-lg font-black">
+                {formatearMoneda(subtotal)}
+              </p>
+            </div>
+          </div>
+
+          {carrito.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center">
+              <ClipboardList
+                size={34}
+                className="text-slate-300"
+              />
+              <p className="mt-3 font-black text-slate-800 in-[.tema-oscuro_&]:text-slate-200">
+                El pedido está vacío
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Busca un producto y agrégalo al pedido.
+              </p>
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <div className="hidden grid-cols-[minmax(170px,1.1fr)_118px_minmax(190px,1fr)_105px_42px] gap-3 border-b border-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-wide text-slate-400 lg:grid in-[.tema-oscuro_&]:border-slate-800">
+                <span>Producto</span>
+                <span>Cantidad</span>
+                <span>Observación</span>
+                <span className="text-right">Valor</span>
+                <span />
+              </div>
+
+              <div className="divide-y divide-slate-100 in-[.tema-oscuro_&]:divide-slate-800">
+                {carrito.map((item) => (
+                  <article
+                    key={item.productoId}
+                    className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(170px,1.1fr)_118px_minmax(190px,1fr)_105px_42px] lg:items-center"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
+                          {item.nombre}
+                        </p>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-300">
+                          {item.codigo}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatearMoneda(item.precio)} por unidad
+                      </p>
+                    </div>
+
+                    <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-slate-50 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-800">
+                      <button
+                        type="button"
+                        disabled={cargando || item.cantidad <= 1}
+                        onClick={() =>
+                          cambiarCantidad(
+                            item.productoId,
+                            item.cantidad - 1,
+                          )
+                        }
+                        className="p-2.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30 in-[.tema-oscuro_&]:text-slate-300 in-[.tema-oscuro_&]:hover:bg-slate-700"
+                      >
+                        <Minus size={15} />
+                      </button>
+
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={item.cantidad}
+                        disabled={cargando}
+                        onChange={(evento) =>
+                          cambiarCantidad(
+                            item.productoId,
+                            Number(evento.target.value),
+                          )
+                        }
+                        className="h-9 w-11 border-x border-slate-200 bg-white text-center text-sm font-black text-slate-900 outline-none in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100"
+                      />
+
+                      <button
+                        type="button"
+                        disabled={cargando || item.cantidad >= 50}
+                        onClick={() =>
+                          cambiarCantidad(
+                            item.productoId,
+                            item.cantidad + 1,
+                          )
+                        }
+                        className="p-2.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30 in-[.tema-oscuro_&]:text-slate-300 in-[.tema-oscuro_&]:hover:bg-slate-700"
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={item.observacion}
+                      disabled={cargando}
+                      maxLength={120}
+                      placeholder="Ej. sin cebolla"
+                      onChange={(evento) =>
+                        cambiarObservacion(
+                          item.productoId,
+                          evento.target.value,
+                        )
+                      }
+                      className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:placeholder:text-slate-500"
+                    />
+
+                    <p className="text-left text-sm font-black text-slate-900 lg:text-right in-[.tema-oscuro_&]:text-slate-100">
+                      {formatearMoneda(
+                        item.precio * item.cantidad,
+                      )}
+                    </p>
+
+                    <button
+                      type="button"
+                      disabled={cargando}
+                      onClick={() =>
+                        quitarProducto(item.productoId)
+                      }
+                      aria-label={`Quitar ${item.nombre}`}
+                      title="Quitar producto"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 in-[.tema-oscuro_&]:border-red-500/30 in-[.tema-oscuro_&]:bg-red-500/10 in-[.tema-oscuro_&]:text-red-300 in-[.tema-oscuro_&]:hover:bg-red-500/20"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="grid items-start gap-4 xl:grid-cols-[minmax(360px,0.95fr)_minmax(420px,1.05fr)]">
+          <div className="space-y-4">
           <div className="relative">
             <label
               htmlFor="buscador-productos-venta"
@@ -1147,7 +1343,7 @@ function FormularioVenta({
                 onKeyDown={
                   manejarTeclaProducto
                 }
-                className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-12 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100 [.tema-oscuro_&]:placeholder:text-slate-500 [.tema-oscuro_&]:focus:ring-roma-950/60"
+                className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-12 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:placeholder:text-slate-500 in-[.tema-oscuro_&]:focus:ring-roma-950/60"
               />
 
               {busquedaProducto && (
@@ -1160,7 +1356,7 @@ function FormularioVenta({
                     buscadorProductoRef.current?.focus();
                   }}
                   aria-label="Limpiar búsqueda de productos"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 [.tema-oscuro_&]:hover:bg-slate-800 [.tema-oscuro_&]:hover:text-slate-100"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 in-[.tema-oscuro_&]:hover:bg-slate-800 in-[.tema-oscuro_&]:hover:text-slate-100"
                 >
                   <X size={17} />
                 </button>
@@ -1168,7 +1364,7 @@ function FormularioVenta({
             </div>
 
             {resultadosProductoAbiertos && (
-              <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-flotante [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900">
+              <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-panel in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900">
                 {resultadosProductos.length ===
                 0 ? (
                   <div className="p-5 text-center text-sm text-slate-500">
@@ -1198,11 +1394,11 @@ function FormularioVenta({
                           className={`flex w-full items-center gap-3 rounded-xl border-l-4 px-3 py-3 text-left transition-colors ${
                             indiceProductoActivo ===
                             indice
-                              ? "border-roma-500 bg-slate-100 pl-2 [.tema-oscuro_&]:bg-slate-800"
-                              : "border-transparent hover:bg-slate-50 [.tema-oscuro_&]:hover:bg-slate-800/70"
+                              ? "border-roma-500 bg-slate-100 pl-2 in-[.tema-oscuro_&]:bg-slate-800"
+                              : "border-transparent hover:bg-slate-50 in-[.tema-oscuro_&]:hover:bg-slate-800/70"
                           }`}
                         >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-600 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-200">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-black text-slate-600 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-200">
                             {producto.nombre
                               .charAt(0)
                               .toUpperCase()}
@@ -1210,16 +1406,23 @@ function FormularioVenta({
 
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                              <p className="truncate text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                                 {producto.nombre}
                               </p>
 
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-300">
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-300">
                                 {producto.codigo}
                               </span>
+
+                              {producto.modoPreparacion === "Entrega directa" && (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700 in-[.tema-oscuro_&]:border-indigo-800 in-[.tema-oscuro_&]:bg-indigo-950/40 in-[.tema-oscuro_&]:text-indigo-300">
+                                  <PackageCheck size={10} />
+                                  Directa
+                                </span>
+                              )}
                             </div>
 
-                            <p className="mt-0.5 truncate text-xs text-slate-500 [.tema-oscuro_&]:text-slate-400">
+                            <p className="mt-0.5 truncate text-xs text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                               {mapaCategorias.get(
                                 producto.categoriaId,
                               ) ?? "Sin categoría"}
@@ -1227,13 +1430,15 @@ function FormularioVenta({
                           </div>
 
                           <div className="text-right">
-                            <p className="text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                            <p className="text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                               {formatearMoneda(
-                                producto.precio,
+                                canalVenta === "PedidosYa"
+                                  ? (producto.precioPedidosYa ?? producto.precio)
+                                  : producto.precio,
                               )}
                             </p>
 
-                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-roma-700 [.tema-oscuro_&]:text-roma-300">
+                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-roma-700 in-[.tema-oscuro_&]:text-roma-300">
                               <Plus size={12} />
                               Agregar
                             </span>
@@ -1246,6 +1451,7 @@ function FormularioVenta({
               </div>
             )}
           </div>
+
 
           <div className="relative">
             <label
@@ -1292,7 +1498,7 @@ function FormularioVenta({
                   );
                 }}
                 onKeyDown={manejarTeclaCliente}
-                className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-12 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100 [.tema-oscuro_&]:placeholder:text-slate-500 [.tema-oscuro_&]:focus:ring-roma-950/60"
+                className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-12 text-sm font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:placeholder:text-slate-500 in-[.tema-oscuro_&]:focus:ring-roma-950/60"
               />
 
               {busquedaCliente && (
@@ -1307,7 +1513,7 @@ function FormularioVenta({
                   }}
                   aria-label="Usar consumidor final"
                   title="Usar consumidor final"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 [.tema-oscuro_&]:hover:bg-slate-800 [.tema-oscuro_&]:hover:text-slate-100"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 in-[.tema-oscuro_&]:hover:bg-slate-800 in-[.tema-oscuro_&]:hover:text-slate-100"
                 >
                   <X size={17} />
                 </button>
@@ -1319,17 +1525,17 @@ function FormularioVenta({
                 className={`rounded-full border px-2.5 py-1 font-black ${
                   tipoClienteActual ===
                   "Registrado"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 [.tema-oscuro_&]:border-emerald-500/50 [.tema-oscuro_&]:bg-emerald-500/10 [.tema-oscuro_&]:text-emerald-200"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 in-[.tema-oscuro_&]:border-emerald-500/50 in-[.tema-oscuro_&]:bg-emerald-500/10 in-[.tema-oscuro_&]:text-emerald-200"
                     : tipoClienteActual ===
                         "Ocasional"
-                      ? "border-blue-300 bg-blue-50 text-blue-700 [.tema-oscuro_&]:border-blue-500/50 [.tema-oscuro_&]:bg-blue-500/10 [.tema-oscuro_&]:text-blue-200"
-                      : "border-slate-300 bg-slate-100 text-slate-600 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-200"
+                      ? "border-blue-300 bg-blue-50 text-blue-700 in-[.tema-oscuro_&]:border-blue-500/50 in-[.tema-oscuro_&]:bg-blue-500/10 in-[.tema-oscuro_&]:text-blue-200"
+                      : "border-slate-300 bg-slate-100 text-slate-600 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-200"
                 }`}
               >
                 {tipoClienteActual}
               </span>
 
-              <span className="text-slate-500 [.tema-oscuro_&]:text-slate-400">
+              <span className="text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                 {tipoClienteActual ===
                 "Ocasional"
                   ? "Se guardará solo en este pedido."
@@ -1341,7 +1547,7 @@ function FormularioVenta({
             </div>
 
             {resultadosClienteAbiertos && (
-              <div className="absolute inset-x-0 top-[4.6rem] z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-flotante [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900">
+              <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-panel in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900">
                 <button
                   type="button"
                   onMouseDown={(evento) =>
@@ -1354,17 +1560,17 @@ function FormularioVenta({
                       false,
                     );
                   }}
-                  className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-slate-50 [.tema-oscuro_&]:border-slate-800 [.tema-oscuro_&]:hover:bg-slate-800"
+                  className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-slate-50 in-[.tema-oscuro_&]:border-slate-800 in-[.tema-oscuro_&]:hover:bg-slate-800"
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-300">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-300">
                     <CircleUserRound size={18} />
                   </div>
 
                   <div>
-                    <p className="text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                    <p className="text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                       Consumidor final
                     </p>
-                    <p className="text-xs text-slate-500 [.tema-oscuro_&]:text-slate-400">
+                    <p className="text-xs text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                       Continuar sin asociar un cliente.
                     </p>
                   </div>
@@ -1393,19 +1599,19 @@ function FormularioVenta({
                           className={`flex w-full items-center gap-3 rounded-xl border-l-4 px-3 py-3 text-left transition-colors ${
                             indiceClienteActivo ===
                             indice
-                              ? "border-emerald-500 bg-slate-100 pl-2 [.tema-oscuro_&]:bg-slate-800"
-                              : "border-transparent hover:bg-slate-50 [.tema-oscuro_&]:hover:bg-slate-800/70"
+                              ? "border-emerald-500 bg-slate-100 pl-2 in-[.tema-oscuro_&]:bg-slate-800"
+                              : "border-transparent hover:bg-slate-50 in-[.tema-oscuro_&]:hover:bg-slate-800/70"
                           }`}
                         >
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 [.tema-oscuro_&]:bg-emerald-500/10 [.tema-oscuro_&]:text-emerald-300">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 in-[.tema-oscuro_&]:bg-emerald-500/10 in-[.tema-oscuro_&]:text-emerald-300">
                             <UserRound size={17} />
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                            <p className="truncate text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                               {cliente.nombreCompleto}
                             </p>
-                            <p className="mt-0.5 truncate text-xs text-slate-500 [.tema-oscuro_&]:text-slate-400">
+                            <p className="mt-0.5 truncate text-xs text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                               {[cliente.numeroDocumento, cliente.telefono]
                                 .filter(Boolean)
                                 .join(" · ") || "Cliente registrado"}
@@ -1425,8 +1631,8 @@ function FormularioVenta({
                   </div>
                 ) : (
                   busquedaCliente.trim() && (
-                    <div className="border-t border-slate-100 px-4 py-3 [.tema-oscuro_&]:border-slate-800">
-                      <p className="text-xs font-bold text-blue-700 [.tema-oscuro_&]:text-blue-300">
+                    <div className="border-t border-slate-100 px-4 py-3 in-[.tema-oscuro_&]:border-slate-800">
+                      <p className="text-xs font-bold text-blue-700 in-[.tema-oscuro_&]:text-blue-300">
                         Se usará “{busquedaCliente.trim()}” como cliente ocasional.
                       </p>
                     </div>
@@ -1435,192 +1641,101 @@ function FormularioVenta({
               </div>
             )}
           </div>
-        </section>
 
-        <section className="flex min-h-[20rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900">
-          <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between [.tema-oscuro_&]:border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-roma-50 text-roma-700 [.tema-oscuro_&]:bg-roma-500/10 [.tema-oscuro_&]:text-roma-300">
-                <ShoppingCart size={20} />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950/60">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                    Canal de venta
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                    Define el precio y la liquidación del pedido.
+                  </p>
+                </div>
+
+                <div className="grid min-w-52.5 grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 in-[.tema-oscuro_&]:bg-slate-900">
+                  {(["Local", "PedidosYa"] as CanalVenta[]).map((canal) => (
+                    <button
+                      key={canal}
+                      type="button"
+                      disabled={
+                        cargando ||
+                        (carrito.length > 0 && canal !== canalVenta)
+                      }
+                      title={
+                        carrito.length > 0 && canal !== canalVenta
+                          ? "Limpia el pedido para cambiar de canal"
+                          : undefined
+                      }
+                      onClick={() => {
+                        setCanalVenta(canal);
+                        setTipoDescuento("Ninguno");
+                        setValorDescuento("");
+                        setMotivoDescuento("");
+                        setMontoQr("");
+                        setMontoRecibido("");
+                        setReferenciaQr("");
+                        setError(null);
+                      }}
+                      className={`min-h-9 rounded-lg px-2.5 text-xs font-black transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                        canalVenta === canal
+                          ? canal === "PedidosYa"
+                            ? "bg-fuchsia-600 text-white shadow-sm in-[.tema-oscuro_&]:bg-fuchsia-500 in-[.tema-oscuro_&]:text-slate-950"
+                            : "bg-roma-700 text-white shadow-sm in-[.tema-oscuro_&]:bg-roma-500 in-[.tema-oscuro_&]:text-slate-950"
+                          : "text-slate-600 hover:bg-white in-[.tema-oscuro_&]:text-slate-300 in-[.tema-oscuro_&]:hover:bg-slate-800"
+                      }`}
+                    >
+                      {canal}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div>
-                <h2 className="font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
-                  Detalle del pedido
-                </h2>
-                <p className="text-xs text-slate-500 [.tema-oscuro_&]:text-slate-400">
-                  {carrito.length} producto(s) · {cantidadUnidades} unidad(es)
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-slate-950 px-4 py-2 text-right text-white">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                Subtotal
-              </p>
-              <p className="text-lg font-black">
-                {formatearMoneda(subtotal)}
-              </p>
-            </div>
-          </div>
-
-          {carrito.length === 0 ? (
-            <div className="flex min-h-64 flex-1 flex-col items-center justify-center p-6 text-center">
-              <ClipboardList
-                size={34}
-                className="text-slate-300"
-              />
-              <p className="mt-3 font-black text-slate-800 [.tema-oscuro_&]:text-slate-200">
-                El pedido está vacío
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Busca un producto y agrégalo al pedido.
-              </p>
-            </div>
-          ) : (
-            <div className="min-h-64 max-h-[24rem] flex-1 overflow-y-auto">
-              <div className="hidden grid-cols-[minmax(170px,1.1fr)_118px_minmax(190px,1fr)_105px_42px] gap-3 border-b border-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-wide text-slate-400 lg:grid [.tema-oscuro_&]:border-slate-800">
-                <span>Producto</span>
-                <span>Cantidad</span>
-                <span>Observación</span>
-                <span className="text-right">Valor</span>
-                <span />
-              </div>
-
-              <div className="divide-y divide-slate-100 [.tema-oscuro_&]:divide-slate-800">
-                {carrito.map((item) => (
-                  <article
-                    key={item.productoId}
-                    className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(170px,1.1fr)_118px_minmax(190px,1fr)_105px_42px] lg:items-center"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
-                          {item.nombre}
-                        </p>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-300">
-                          {item.codigo}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatearMoneda(item.precio)} por unidad
-                      </p>
-                    </div>
-
-                    <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-slate-50 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-800">
-                      <button
-                        type="button"
-                        disabled={cargando || item.cantidad <= 1}
-                        onClick={() =>
-                          cambiarCantidad(
-                            item.productoId,
-                            item.cantidad - 1,
-                          )
-                        }
-                        className="p-2.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30 [.tema-oscuro_&]:text-slate-300 [.tema-oscuro_&]:hover:bg-slate-700"
-                      >
-                        <Minus size={15} />
-                      </button>
-
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={item.cantidad}
-                        disabled={cargando}
-                        onChange={(evento) =>
-                          cambiarCantidad(
-                            item.productoId,
-                            Number(evento.target.value),
-                          )
-                        }
-                        className="h-9 w-11 border-x border-slate-200 bg-white text-center text-sm font-black text-slate-900 outline-none [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100"
-                      />
-
-                      <button
-                        type="button"
-                        disabled={cargando || item.cantidad >= 50}
-                        onClick={() =>
-                          cambiarCantidad(
-                            item.productoId,
-                            item.cantidad + 1,
-                          )
-                        }
-                        className="p-2.5 text-slate-600 hover:bg-slate-100 disabled:opacity-30 [.tema-oscuro_&]:text-slate-300 [.tema-oscuro_&]:hover:bg-slate-700"
-                      >
-                        <Plus size={15} />
-                      </button>
-                    </div>
-
+              {canalVenta === "PedidosYa" && (
+                <div className="mt-3 border-t border-slate-200 pt-3 in-[.tema-oscuro_&]:border-slate-800">
+                  <label>
+                    <span className="text-[10px] font-black uppercase tracking-wide text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                      Referencia PedidosYa
+                    </span>
                     <input
                       type="text"
-                      value={item.observacion}
+                      maxLength={80}
+                      value={referenciaPedidosYa}
                       disabled={cargando}
-                      maxLength={120}
-                      placeholder="Ej. sin cebolla"
+                      placeholder="N.º de pedido de la plataforma (opcional)"
                       onChange={(evento) =>
-                        cambiarObservacion(
-                          item.productoId,
-                          evento.target.value,
-                        )
+                        setReferenciaPedidosYa(evento.target.value)
                       }
-                      className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100 [.tema-oscuro_&]:placeholder:text-slate-500"
+                      className="mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-fuchsia-500 focus:ring-4 focus:ring-fuchsia-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:focus:ring-fuchsia-950/50"
                     />
+                  </label>
 
-                    <p className="text-left text-sm font-black text-slate-900 lg:text-right [.tema-oscuro_&]:text-slate-100">
-                      {formatearMoneda(
-                        item.precio * item.cantidad,
-                      )}
-                    </p>
-
-                    <button
-                      type="button"
-                      disabled={cargando}
-                      onClick={() =>
-                        quitarProducto(item.productoId)
-                      }
-                      aria-label={`Quitar ${item.nombre}`}
-                      title="Quitar producto"
-                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 [.tema-oscuro_&]:border-red-500/30 [.tema-oscuro_&]:bg-red-500/10 [.tema-oscuro_&]:text-red-300 [.tema-oscuro_&]:hover:bg-red-500/20"
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  </article>
-                ))}
-              </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-fuchsia-700 in-[.tema-oscuro_&]:text-fuchsia-300">
+                    Se requiere caja abierta para identificar al responsable. El importe no entra como efectivo ni QR y queda pendiente de liquidación.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-        </section>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.9fr)]">
-          <div className="space-y-3">
-            <label>
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">
-                Observaciones generales
-              </span>
-              <textarea
-                value={observaciones}
-                disabled={cargando}
-                maxLength={300}
-                rows={3}
-                placeholder="Indicaciones generales para todo el pedido"
-                onChange={(evento) =>
-                  setObservaciones(evento.target.value)
-                }
-                className="mt-1.5 min-h-24 w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100 [.tema-oscuro_&]:placeholder:text-slate-500"
-              />
-            </label>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={cargando}
-                onClick={alAbrirHistorial}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-200 [.tema-oscuro_&]:hover:bg-slate-800"
-              >
-                <History size={17} />
-                Historial
-              </button>
+            <div
+              className={`grid gap-2 ${
+                puedeVerHistorial
+                  ? "sm:grid-cols-2"
+                  : "grid-cols-1"
+              }`}
+            >
+              {puedeVerHistorial && (
+                <button
+                  type="button"
+                  disabled={cargando}
+                  onClick={alAbrirHistorial}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-200 in-[.tema-oscuro_&]:hover:bg-slate-800"
+                >
+                  <History size={17} />
+                  Historial
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1631,22 +1746,25 @@ function FormularioVenta({
                     !observaciones)
                 }
                 onClick={limpiarFormulario}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-200 [.tema-oscuro_&]:hover:bg-slate-800"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-200 in-[.tema-oscuro_&]:hover:bg-slate-800"
               >
                 <X size={17} />
                 Limpiar pedido
               </button>
             </div>
+
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900">
+          <div className="space-y-4">
+          {canalVenta === "Local" ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <WalletCards
                   size={18}
                   className="text-emerald-600"
                 />
-                <h3 className="font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                <h3 className="font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                   Cobro integrado
                 </h3>
               </div>
@@ -1654,23 +1772,31 @@ function FormularioVenta({
               <span
                 className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
                   metodoDetectado
-                    ? "bg-emerald-100 text-emerald-700 [.tema-oscuro_&]:bg-emerald-500/15 [.tema-oscuro_&]:text-emerald-200"
-                    : "bg-amber-100 text-amber-700 [.tema-oscuro_&]:bg-amber-500/15 [.tema-oscuro_&]:text-amber-200"
+                    ? pagoCompleto
+                      ? "bg-emerald-100 text-emerald-700 in-[.tema-oscuro_&]:bg-emerald-500/15 in-[.tema-oscuro_&]:text-emerald-200"
+                      : "bg-amber-100 text-amber-700 in-[.tema-oscuro_&]:bg-amber-500/15 in-[.tema-oscuro_&]:text-amber-200"
+                    : "bg-amber-100 text-amber-700 in-[.tema-oscuro_&]:bg-amber-500/15 in-[.tema-oscuro_&]:text-amber-200"
                 }`}
               >
-                {metodoDetectado ?? "Pendiente"}
+                {metodoDetectado
+                  ? pagoCompleto
+                    ? metodoDetectado
+                    : `${metodoDetectado} · Abono`
+                  : "Pendiente"}
               </span>
             </div>
 
             {!pagoHabilitado && (
-              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-700 [.tema-oscuro_&]:border-amber-500/30 [.tema-oscuro_&]:bg-amber-500/10 [.tema-oscuro_&]:text-amber-200">
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-700 in-[.tema-oscuro_&]:border-amber-500/30 in-[.tema-oscuro_&]:bg-amber-500/10 in-[.tema-oscuro_&]:text-amber-200">
                 {puedeCobrar
                   ? "Debes abrir tu propia caja antes de registrar pedidos y cobros."
-                  : "Tu usuario no tiene permiso para operar una caja ni registrar ventas."}
+                  : cajaAbierta
+                    ? "Sin permiso de cobro: el pedido se registrará pendiente para que otro usuario autorizado lo cobre."
+                    : "Debes tener tu propia caja abierta para registrar pedidos. Sin permiso de cobro, el pedido quedará pendiente."}
               </div>
             )}
 
-            <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-950">
+            <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950">
               {!mostrarDescuento ? (
                 <button
                   type="button"
@@ -1678,17 +1804,17 @@ function FormularioVenta({
                   onClick={() =>
                     setMostrarDescuento(true)
                   }
-                  className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 [.tema-oscuro_&]:hover:bg-slate-900"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 in-[.tema-oscuro_&]:hover:bg-slate-900"
                 >
-                  <span className="flex items-center gap-2 text-sm font-bold text-slate-700 [.tema-oscuro_&]:text-slate-200">
+                  <span className="flex items-center gap-2 text-sm font-bold text-slate-700 in-[.tema-oscuro_&]:text-slate-200">
                     <Tag
                       size={16}
-                      className="text-roma-600 [.tema-oscuro_&]:text-roma-300"
+                      className="text-roma-600 in-[.tema-oscuro_&]:text-roma-300"
                     />
                     Aplicar descuento
                   </span>
 
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-400">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-400">
                     Opcional
                   </span>
                 </button>
@@ -1696,11 +1822,11 @@ function FormularioVenta({
                 <div className="space-y-3 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                      <p className="text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                         Configurar descuento
                       </p>
 
-                      <p className="mt-0.5 text-[11px] text-slate-500 [.tema-oscuro_&]:text-slate-400">
+                      <p className="mt-0.5 text-[11px] text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                         Selecciona el tipo e indica el motivo.
                       </p>
                     </div>
@@ -1709,7 +1835,7 @@ function FormularioVenta({
                       type="button"
                       disabled={cargando}
                       onClick={quitarDescuento}
-                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-300 [.tema-oscuro_&]:hover:bg-slate-800 [.tema-oscuro_&]:hover:text-white"
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-300 in-[.tema-oscuro_&]:hover:bg-slate-800 in-[.tema-oscuro_&]:hover:text-white"
                     >
                       <X size={14} />
                       Quitar
@@ -1728,8 +1854,8 @@ function FormularioVenta({
                           }
                           className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors disabled:opacity-40 ${
                             tipoDescuento === tipo
-                              ? "border-roma-500 bg-roma-50 text-roma-700 [.tema-oscuro_&]:bg-roma-500/10 [.tema-oscuro_&]:text-roma-200"
-                              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-300 [.tema-oscuro_&]:hover:bg-slate-800"
+                              ? "border-roma-500 bg-roma-50 text-roma-700 in-[.tema-oscuro_&]:bg-roma-500/10 in-[.tema-oscuro_&]:text-roma-200"
+                              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-300 in-[.tema-oscuro_&]:hover:bg-slate-800"
                           }`}
                         >
                           {tipo === "Monto fijo"
@@ -1741,7 +1867,7 @@ function FormularioVenta({
                   </div>
 
                   {tipoDescuento === "Ninguno" ? (
-                    <p className="rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-center text-xs text-slate-500 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:text-slate-400">
+                    <p className="rounded-xl border border-dashed border-slate-300 px-3 py-2.5 text-center text-xs text-slate-500 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:text-slate-400">
                       Elige porcentaje o monto fijo para continuar.
                     </p>
                   ) : (
@@ -1766,7 +1892,7 @@ function FormularioVenta({
                           onChange={(evento) =>
                             setValorDescuento(evento.target.value)
                           }
-                          className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-roma-500 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100"
+                          className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-roma-500 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100"
                         />
                       </div>
 
@@ -1779,7 +1905,7 @@ function FormularioVenta({
                         onChange={(evento) =>
                           setMotivoDescuento(evento.target.value)
                         }
-                        className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900 [.tema-oscuro_&]:text-slate-100"
+                        className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100"
                       />
                     </div>
                   )}
@@ -1788,30 +1914,6 @@ function FormularioVenta({
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <label>
-                <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-                  Monto en QR
-                </span>
-                <div className="relative mt-1">
-                  <QrCode
-                    size={15}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={montoQr}
-                    disabled={cargando || !pagoHabilitado}
-                    placeholder="0,00"
-                    onChange={(evento) =>
-                      setMontoQr(evento.target.value)
-                    }
-                    className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-roma-500 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-950 [.tema-oscuro_&]:text-slate-100"
-                  />
-                </div>
-              </label>
-
               <label>
                 <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
                   Efectivo recibido
@@ -1835,7 +1937,31 @@ function FormularioVenta({
                     onChange={(evento) =>
                       setMontoRecibido(evento.target.value)
                     }
-                    className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-roma-500 disabled:bg-slate-100 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-950 [.tema-oscuro_&]:text-slate-100 [.tema-oscuro_&]:disabled:bg-slate-800"
+                    className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:ring-3 focus:ring-emerald-100 disabled:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:disabled:bg-slate-800 in-[.tema-oscuro_&]:focus:ring-emerald-950/50"
+                  />
+                </div>
+              </label>
+
+              <label>
+                <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  Monto en QR
+                </span>
+                <div className="relative mt-1">
+                  <QrCode
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={montoQr}
+                    disabled={cargando || !pagoHabilitado}
+                    placeholder="0,00"
+                    onChange={(evento) =>
+                      setMontoQr(evento.target.value)
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:focus:ring-blue-950/50"
                   />
                 </div>
               </label>
@@ -1851,40 +1977,97 @@ function FormularioVenta({
                 onChange={(evento) =>
                   setReferenciaQr(evento.target.value)
                 }
-                className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-950 [.tema-oscuro_&]:text-slate-100"
+                className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-roma-500 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950 in-[.tema-oscuro_&]:text-slate-100"
               />
             )}
 
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white p-3 [.tema-oscuro_&]:bg-slate-950">
-                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+              <div className="rounded-xl border border-slate-200 bg-white p-3 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-950">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                  {metodoDetectado && !pagoCompleto
+                    ? "Saldo pendiente"
+                    : "Cambio"}
+                </p>
+                <p className="mt-1 text-lg font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
+                  {formatearMoneda(
+                    metodoDetectado && !pagoCompleto
+                      ? faltante
+                      : cambio,
+                  )}
+                </p>
+                {metodoDetectado && !pagoCompleto ? (
+                  <p className="mt-1 text-[10px] font-bold text-amber-700 in-[.tema-oscuro_&]:text-amber-300">
+                    Abono: {formatearMoneda(totalAbono)}
+                  </p>
+                ) : !metodoDetectado &&
+                  pagoHabilitado &&
+                  totalFinal > 0 ? (
+                    <p className="mt-1 text-[10px] font-bold text-amber-700 in-[.tema-oscuro_&]:text-amber-300">
+                      Faltan {formatearMoneda(faltante)}
+                    </p>
+                  ) : null}
+              </div>
+
+              <div className="rounded-xl border border-roma-300 bg-roma-50 p-3 shadow-sm in-[.tema-oscuro_&]:border-roma-500/35 in-[.tema-oscuro_&]:bg-roma-500/10">
+                <p className="text-[10px] font-black uppercase tracking-wide text-roma-700 in-[.tema-oscuro_&]:text-roma-300">
                   Total final
                 </p>
-                <p className="mt-1 text-lg font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                <p className="mt-1 text-xl font-black text-roma-800 in-[.tema-oscuro_&]:text-roma-200">
                   {formatearMoneda(totalFinal)}
                 </p>
                 {montoDescuento > 0 && (
-                  <p className="mt-1 text-[10px] font-bold text-roma-600">
+                  <p className="mt-1 text-[10px] font-bold text-roma-600 in-[.tema-oscuro_&]:text-roma-300">
                     Descuento: - {formatearMoneda(montoDescuento)}
                   </p>
                 )}
               </div>
-
-              <div className="rounded-xl bg-emerald-50 p-3 [.tema-oscuro_&]:bg-emerald-500/10">
-                <p className="text-[10px] font-black uppercase tracking-wide text-emerald-700 [.tema-oscuro_&]:text-emerald-300">
-                  Cambio
-                </p>
-                <p className="mt-1 text-lg font-black text-emerald-700 [.tema-oscuro_&]:text-emerald-300">
-                  {formatearMoneda(cambio)}
-                </p>
-                {!metodoDetectado &&
-                  pagoHabilitado &&
-                  totalFinal > 0 && (
-                    <p className="mt-1 text-[10px] font-bold text-amber-700 [.tema-oscuro_&]:text-amber-300">
-                      Faltan {formatearMoneda(faltante)}
-                    </p>
-                  )}
+            </div>
+          </div>
+          ) : (
+            <div className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50/70 p-4 in-[.tema-oscuro_&]:border-fuchsia-900/60 in-[.tema-oscuro_&]:bg-fuchsia-950/25">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <WalletCards size={18} className="text-fuchsia-600 in-[.tema-oscuro_&]:text-fuchsia-300" />
+                  <h3 className="font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
+                    Liquidación PedidosYa
+                  </h3>
+                </div>
+                <span className="rounded-full border border-fuchsia-200 bg-white px-2.5 py-1 text-[10px] font-black text-fuchsia-700 in-[.tema-oscuro_&]:border-fuchsia-900/60 in-[.tema-oscuro_&]:bg-fuchsia-950/50 in-[.tema-oscuro_&]:text-fuchsia-300">
+                  Pendiente de liquidación
+                </span>
               </div>
+
+              <div className="mt-4 rounded-xl border border-fuchsia-200 bg-white p-4 in-[.tema-oscuro_&]:border-fuchsia-900/60 in-[.tema-oscuro_&]:bg-slate-950">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 in-[.tema-oscuro_&]:text-slate-400">Total del pedido</p>
+                <p className="mt-1 text-2xl font-black text-fuchsia-700 in-[.tema-oscuro_&]:text-fuchsia-300">
+                  {formatearMoneda(subtotal)}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
+                  Este importe no entra como efectivo ni QR. Permanecerá pendiente hasta que un administrador registre la transferencia de PedidosYa en Reportes.
+                </p>
+              </div>
+            </div>
+          )}
+
+
+            <div>
+            <label>
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Observaciones generales
+              </span>
+              <textarea
+                value={observaciones}
+                disabled={cargando}
+                maxLength={300}
+                rows={3}
+                placeholder="Indicaciones generales para todo el pedido"
+                onChange={(evento) =>
+                  setObservaciones(evento.target.value)
+                }
+                className="mt-1.5 min-h-24 w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-roma-500 focus:ring-4 focus:ring-roma-100 disabled:bg-slate-100 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900 in-[.tema-oscuro_&]:text-slate-100 in-[.tema-oscuro_&]:placeholder:text-slate-500"
+              />
+            </label>
+
             </div>
           </div>
         </section>
@@ -1893,17 +2076,23 @@ function FormularioVenta({
           {error ? (
             <div
               role="alert"
-              className="flex-1 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 [.tema-oscuro_&]:border-red-500/30 [.tema-oscuro_&]:bg-red-500/10 [.tema-oscuro_&]:text-red-200"
+              className="flex-1 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 in-[.tema-oscuro_&]:border-red-500/30 in-[.tema-oscuro_&]:bg-red-500/10 in-[.tema-oscuro_&]:text-red-200"
             >
               {error}
             </div>
           ) : (
             <p className="text-xs text-slate-500">
-              {metodoDetectado
-                ? `El pedido se registrará cobrado mediante ${metodoDetectado}.`
-                : pagoHabilitado
-                  ? "Si el pago no cubre el total, el pedido quedará pendiente dentro de tu caja."
-                  : "Abre tu caja para habilitar el registro del pedido."}
+              {canalVenta === "PedidosYa"
+                ? registroHabilitado
+                  ? "El pedido quedará pendiente de liquidación por PedidosYa y no afectará el efectivo ni el QR de tu caja."
+                  : "Abre tu propia caja para registrar el pedido de PedidosYa."
+                : metodoDetectado
+                  ? pagoCompleto
+                    ? `El pedido se registrará cobrado mediante ${metodoDetectado}.`
+                    : `Se registrará un abono de ${formatearMoneda(totalAbono)} mediante ${metodoDetectado} y quedará un saldo de ${formatearMoneda(faltante)}.`
+                  : registroHabilitado
+                    ? "Puedes registrar el pedido pendiente o ingresar un abono parcial. Cada abono quedará asociado a la caja que lo reciba."
+                    : "Abre tu caja para habilitar el registro del pedido."}
             </p>
           )}
 
@@ -1912,7 +2101,7 @@ function FormularioVenta({
             disabled={
               cargando ||
               carrito.length === 0 ||
-              !pagoHabilitado
+              !registroHabilitado
             }
             className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-roma-700 px-6 text-sm font-bold text-white shadow-lg shadow-roma-900/15 transition-colors hover:bg-roma-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1925,9 +2114,13 @@ function FormularioVenta({
               <ClipboardCheck size={18} />
             )}
 
-            {metodoDetectado
-              ? "Revisar y cobrar"
-              : "Revisar pedido"}
+            {canalVenta === "PedidosYa"
+              ? "Revisar pedido PedidosYa"
+              : metodoDetectado
+                ? pagoCompleto
+                  ? "Revisar y cobrar"
+                  : "Revisar y abonar"
+                : "Revisar pedido"}
           </button>
         </div>
       </form>
@@ -1947,18 +2140,18 @@ function FormularioVenta({
       >
         {resumenConfirmacion && (
           <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-6">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:bg-slate-900">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:bg-slate-900">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs font-black uppercase tracking-wide text-roma-600">
                     Pre-resumen
                   </p>
-                  <h3 className="mt-1 text-xl font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                  <h3 className="mt-1 text-xl font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                     {resumenConfirmacion.nombreCliente}
                   </h3>
                 </div>
 
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 [.tema-oscuro_&]:bg-slate-800 [.tema-oscuro_&]:text-slate-200">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 in-[.tema-oscuro_&]:bg-slate-800 in-[.tema-oscuro_&]:text-slate-200">
                   {cantidadUnidades} unidad(es)
                 </span>
               </div>
@@ -1967,19 +2160,19 @@ function FormularioVenta({
                 {carrito.map((item) => (
                   <div
                     key={item.productoId}
-                    className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3 [.tema-oscuro_&]:bg-slate-800"
+                    className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3 in-[.tema-oscuro_&]:bg-slate-800"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                      <p className="text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                         {item.cantidad}× {item.nombre}
                       </p>
                       {item.observacion.trim() && (
-                        <p className="mt-1 text-xs italic text-slate-500 [.tema-oscuro_&]:text-slate-400">
+                        <p className="mt-1 text-xs italic text-slate-500 in-[.tema-oscuro_&]:text-slate-400">
                           {item.observacion.trim()}
                         </p>
                       )}
                     </div>
-                    <p className="shrink-0 text-sm font-black text-slate-900 [.tema-oscuro_&]:text-slate-100">
+                    <p className="shrink-0 text-sm font-black text-slate-900 in-[.tema-oscuro_&]:text-slate-100">
                       {formatearMoneda(
                         item.precio * item.cantidad,
                       )}
@@ -1989,7 +2182,7 @@ function FormularioVenta({
               </div>
 
               {observaciones.trim() && (
-                <div className="mt-4 rounded-xl border border-slate-200 p-3 text-sm text-slate-600 [.tema-oscuro_&]:border-slate-700 [.tema-oscuro_&]:text-slate-300">
+                <div className="mt-4 rounded-xl border border-slate-200 p-3 text-sm text-slate-600 in-[.tema-oscuro_&]:border-slate-700 in-[.tema-oscuro_&]:text-slate-300">
                   <strong>Observaciones:</strong>{" "}
                   {observaciones.trim()}
                 </div>
@@ -2040,7 +2233,12 @@ function FormularioVenta({
 
               <div className="mt-5 rounded-2xl bg-white/5 p-4">
                 <div className="flex items-center gap-2 text-sm font-black">
-                  {resumenConfirmacion.cobro ? (
+                  {resumenConfirmacion.datos.canalVenta === "PedidosYa" ? (
+                    <WalletCards
+                      size={18}
+                      className="text-fuchsia-300"
+                    />
+                  ) : resumenConfirmacion.cobro ? (
                     <CreditCard
                       size={18}
                       className="text-emerald-300"
@@ -2051,12 +2249,27 @@ function FormularioVenta({
                       className="text-amber-300"
                     />
                   )}
-                  {resumenConfirmacion.cobro
-                    ? resumenConfirmacion.cobro.metodoPago
-                    : "Pendiente de cobro"}
+                  {resumenConfirmacion.datos.canalVenta === "PedidosYa"
+                    ? "PedidosYa · Pendiente de liquidación"
+                    : resumenConfirmacion.cobro
+                      ? resumenConfirmacion.pagoCompleto
+                        ? resumenConfirmacion.cobro.metodoPago
+                        : `${resumenConfirmacion.cobro.metodoPago} · Abono parcial`
+                      : "Pendiente de cobro"}
                 </div>
 
-                {resumenConfirmacion.cobro ? (
+                {resumenConfirmacion.datos.canalVenta === "PedidosYa" ? (
+                  <div className="mt-3 space-y-1.5 text-xs text-slate-300">
+                    {resumenConfirmacion.datos.referenciaPedidosYa && (
+                      <p>
+                        Referencia: {resumenConfirmacion.datos.referenciaPedidosYa}
+                      </p>
+                    )}
+                    <p className="leading-relaxed text-slate-400">
+                      El pedido se registrará con el precio de PedidosYa. No ingresará efectivo ni QR a la caja y quedará pendiente hasta que el administrador registre la liquidación correspondiente.
+                    </p>
+                  </div>
+                ) : resumenConfirmacion.cobro ? (
                   <div className="mt-3 space-y-1.5 text-xs text-slate-300">
                     {resumenConfirmacion.montoQr > 0 && (
                       <p>
@@ -2084,10 +2297,24 @@ function FormularioVenta({
                         resumenConfirmacion.cambio,
                       )}
                     </p>
+                    {!resumenConfirmacion.pagoCompleto && (
+                      <>
+                        <p className="font-black text-amber-300">
+                          Abono: {formatearMoneda(
+                            resumenConfirmacion.totalAbono,
+                          )}
+                        </p>
+                        <p className="font-black text-amber-300">
+                          Saldo pendiente: {formatearMoneda(
+                            resumenConfirmacion.faltante,
+                          )}
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                    No se registrará un pago parcial. El pedido permanecerá en la cola hasta completar el cobro.
+                    No se registrará ningún pago en este momento. El pedido permanecerá pendiente de cobro.
                   </p>
                 )}
               </div>
@@ -2109,9 +2336,13 @@ function FormularioVenta({
                   ) : (
                     <ClipboardCheck size={17} />
                   )}
-                  {resumenConfirmacion.cobro
-                    ? "Confirmar y cobrar"
-                    : "Confirmar pendiente"}
+                  {resumenConfirmacion.datos.canalVenta === "PedidosYa"
+                    ? "Confirmar pedido PedidosYa"
+                    : resumenConfirmacion.cobro
+                      ? resumenConfirmacion.pagoCompleto
+                        ? "Confirmar y cobrar"
+                        : "Confirmar y registrar abono"
+                      : "Confirmar pendiente"}
                 </button>
 
                 <button

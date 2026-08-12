@@ -88,6 +88,12 @@ function HistorialVentas({
             .includes(texto) ||
           venta.clienteNombre
             .toLocaleLowerCase("es")
+            .includes(texto) ||
+          venta.canalVenta
+            .toLocaleLowerCase("es")
+            .includes(texto) ||
+          (venta.referenciaPedidosYa ?? "")
+            .toLocaleLowerCase("es")
             .includes(texto),
       );
     }, [busqueda, ventasOrdenadas],
@@ -165,10 +171,10 @@ function HistorialVentas({
               focus:border-roma-500
               focus:ring-4
               focus:ring-roma-100
-              [.tema-oscuro_&]:border-slate-700
-              [.tema-oscuro_&]:bg-slate-900
-              [.tema-oscuro_&]:text-slate-100
-              [.tema-oscuro_&]:placeholder:text-slate-500
+              in-[.tema-oscuro_&]:border-slate-700
+              in-[.tema-oscuro_&]:bg-slate-900
+              in-[.tema-oscuro_&]:text-slate-100
+              in-[.tema-oscuro_&]:placeholder:text-slate-500
             "
           />
         </div>
@@ -247,14 +253,23 @@ function HistorialVentas({
                     Pedido
                   </p>
 
-                  <p
-                    className="
-                      mt-1 font-black
-                      text-slate-900
-                    "
-                  >
-                    {venta.numeroPedido}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <p
+                      className="
+                        font-black
+                        text-slate-900
+                        in-[.tema-oscuro_&]:text-slate-100
+                      "
+                    >
+                      {venta.numeroPedido}
+                    </p>
+
+                    {venta.canalVenta === "PedidosYa" && (
+                      <span className="rounded-full border border-fuchsia-200 bg-fuchsia-50 px-2 py-0.5 text-[9px] font-black text-fuchsia-700 in-[.tema-oscuro_&]:border-fuchsia-800 in-[.tema-oscuro_&]:bg-fuchsia-950/40 in-[.tema-oscuro_&]:text-fuchsia-300">
+                        PedidosYa
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="min-w-0">

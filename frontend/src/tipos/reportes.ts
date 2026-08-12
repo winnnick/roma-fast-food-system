@@ -3,6 +3,7 @@ import type {
 } from "./caja";
 
 import type {
+  CanalVenta,
   EstadoCobro,
   EstadoPreparacion,
 } from "./venta";
@@ -18,7 +19,8 @@ export type TipoReporteAdministrativo =
   | "Caja"
   | "Inventario"
   | "Actividad por usuario"
-  | "Bitácora";
+  | "Bitácora"
+  | "PedidosYa";
 
 export interface FiltroReporteAdministrativo {
   fechaDesde: string;
@@ -42,6 +44,8 @@ export interface FiltroReporteAdministrativo {
 export interface ColumnaExportacion<T> {
   encabezado: string;
   obtenerValor: (registro: T) => unknown;
+  peso?: number;
+  alineacion?: "izquierda" | "centro" | "derecha";
 }
 
 export interface DocumentoReporte<T> {
@@ -63,6 +67,8 @@ export interface FilaReporteVenta {
 
   cliente: string;
   productos: string;
+  canalVenta: CanalVenta;
+  referenciaPedidosYa: string | null;
 
   subtotal: number;
   descuento: number;
@@ -109,5 +115,6 @@ export interface FilaReporteUsuario {
   aperturasCaja: number;
   cierresCaja: number;
 
+  eventosAuditoria: number;
   totalAcciones: number;
 }

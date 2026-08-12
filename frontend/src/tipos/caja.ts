@@ -54,10 +54,17 @@ export interface RegistrarPagoVentaDto {
   metodoPago: MetodoPago;
 
   /**
-   * Monto del total que se pagará
-   * efectivamente en dinero físico.
+   * Monto que se aplicará mediante QR en este abono.
+   * Puede ser menor al saldo pendiente cuando el cliente
+   * realiza un pago parcial.
+   */
+  montoQr: number;
+
+  /**
+   * Monto que se aplicará efectivamente en dinero físico
+   * dentro de este abono.
    *
-   * En pago efectivo será igual al total.
+   * En pago efectivo será igual al importe aplicado.
    * En QR será cero.
    * En pago mixto será la parte en efectivo.
    */

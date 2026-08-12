@@ -11,16 +11,30 @@ import {
 } from "./productoServicio";
 
 import type {
+  CanalVenta,
   CrearVentaDto,
   DetalleVenta,
   EstadoPreparacion,
+  LiquidacionPedidosYa,
+  ModoInicioPreparacion,
   RegistrarCobroVentaDto,
+  RegistrarLiquidacionPedidosYaDto,
+  ResumenPedidosYaPeriodo,
   TipoClienteVenta,
   Venta,
 } from "../tipos/venta";
 
 const CLAVE_VENTAS =
   "roma-ventas-unificadas-v1";
+
+const CLAVE_LIQUIDACIONES_PEDIDOSYA =
+  "roma-pedidosya-liquidaciones-v1";
+
+export const CLAVE_FLUJO_PREPARACION =
+  "roma-ventas-flujo-preparacion-v1";
+
+const MODO_INICIO_PREPARACION_PREDETERMINADO: ModoInicioPreparacion =
+  "En preparación";
 
 function esperar(
   milisegundos: number,
@@ -31,6 +45,52 @@ function esperar(
       milisegundos,
     );
   });
+}
+
+export function obtenerModoInicioPreparacion(): ModoInicioPreparacion {
+  const guardado = localStorage.getItem(
+    CLAVE_FLUJO_PREPARACION,
+  );
+
+  return guardado === "En cola" ||
+    guardado === "En preparación"
+    ? guardado
+    : MODO_INICIO_PREPARACION_PREDETERMINADO;
+}
+
+export async function actualizarModoInicioPreparacion(
+  nuevoModo: ModoInicioPreparacion,
+): Promise<ModoInicioPreparacion> {
+  await esperar(250);
+
+  if (nuevoModo === "En preparación") {
+    const pedidosEnCola =
+      obtenerVentasPersistidas().filter(
+        (venta) =>
+          venta.estadoPreparacion === "En cola" &&
+          venta.estadoCobro !== "Anulada",
+      );
+
+    if (pedidosEnCola.length > 0) {
+      throw new Error(
+        `No se puede desactivar la cola mientras existan ${pedidosEnCola.length} pedido${pedidosEnCola.length === 1 ? "" : "s"} esperando preparación.`,
+      );
+    }
+  }
+
+  localStorage.setItem(
+    CLAVE_FLUJO_PREPARACION,
+    nuevoModo,
+  );
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "roma-flujo-preparacion-actualizado",
+      { detail: nuevoModo },
+    ),
+  );
+
+  return nuevoModo;
 }
 
 function redondearMoneda(
@@ -46,6 +106,8 @@ function clonarDetalle(
 ): DetalleVenta {
   return {
     ...detalle,
+    requierePreparacion:
+      detalle.requierePreparacion !== false,
   };
 }
 
@@ -140,8 +202,40 @@ function normalizarVenta(
       venta,
     );
 
+  const canalVenta: CanalVenta =
+    venta.canalVenta === "PedidosYa"
+      ? "PedidosYa"
+      : "Local";
+
+  const estadoCobroNormalizado =
+    canalVenta === "PedidosYa"
+      ? venta.estadoCobro === "Liquidada"
+        ? "Liquidada"
+        : venta.estadoCobro === "Anulada"
+          ? "Anulada"
+          : "Pendiente de liquidación"
+      : venta.estadoCobro === "Cobrada" ||
+          venta.estadoCobro === "Anulada"
+        ? venta.estadoCobro
+        : "Pendiente de cobro";
+
   return {
     ...venta,
+
+    canalVenta,
+    referenciaPedidosYa:
+      canalVenta === "PedidosYa"
+        ? venta.referenciaPedidosYa?.trim() || null
+        : null,
+    liquidacionPedidosYaId:
+      canalVenta === "PedidosYa" &&
+      Number.isInteger(venta.liquidacionPedidosYaId)
+        ? venta.liquidacionPedidosYaId
+        : null,
+    fechaHoraLiquidacionPedidosYa:
+      canalVenta === "PedidosYa"
+        ? venta.fechaHoraLiquidacionPedidosYa ?? null
+        : null,
 
     tipoCliente,
 
@@ -187,14 +281,60 @@ function normalizarVenta(
 
     total,
 
+    estadoCobro: estadoCobroNormalizado,
+
     pagoId:
-      venta.pagoId ?? null,
+      canalVenta === "PedidosYa"
+        ? null
+        : venta.pagoId ?? null,
 
     metodoPago:
-      venta.metodoPago ?? null,
+      canalVenta === "PedidosYa"
+        ? null
+        : venta.metodoPago ?? null,
 
     fechaHoraCobro:
-      venta.fechaHoraCobro ?? null,
+      canalVenta === "PedidosYa"
+        ? null
+        : venta.fechaHoraCobro ?? null,
+
+    usuarioEntregaId:
+      Number.isInteger(venta.usuarioEntregaId)
+        ? venta.usuarioEntregaId
+        : null,
+    usuarioEntregaNombre:
+      venta.usuarioEntregaNombre?.trim() || null,
+    sesionCajaIdEntrega:
+      Number.isInteger(venta.sesionCajaIdEntrega)
+        ? venta.sesionCajaIdEntrega
+        : null,
+
+    requierePreparacion:
+      typeof venta.requierePreparacion === "boolean"
+        ? venta.requierePreparacion
+        : Array.isArray(venta.detalles)
+          ? venta.detalles.some(
+              (detalle) =>
+                detalle.requierePreparacion !== false,
+            )
+          : true,
+
+    estadoPreparacion:
+      venta.estadoPreparacion === "En cola" ||
+      venta.estadoPreparacion === "En preparación" ||
+      venta.estadoPreparacion === "Entrega directa" ||
+      venta.estadoPreparacion === "Listo" ||
+      venta.estadoPreparacion === "Entregado" ||
+      venta.estadoPreparacion === "Anulado"
+        ? venta.estadoPreparacion
+        : "En preparación",
+
+    fechaHoraInicioPreparacion:
+      venta.fechaHoraInicioPreparacion ??
+      (venta.estadoPreparacion === "En cola" ||
+      venta.estadoPreparacion === "Entrega directa"
+        ? null
+        : venta.fechaHoraRegistro),
 
     detalles:
       Array.isArray(
@@ -254,6 +394,267 @@ function obtenerVentasPersistidas():
     guardarVentas([]);
     return [];
   }
+}
+
+function obtenerLiquidacionesPedidosYaPersistidas(): LiquidacionPedidosYa[] {
+  const datos = localStorage.getItem(
+    CLAVE_LIQUIDACIONES_PEDIDOSYA,
+  );
+
+  if (!datos) {
+    localStorage.setItem(
+      CLAVE_LIQUIDACIONES_PEDIDOSYA,
+      JSON.stringify([]),
+    );
+    return [];
+  }
+
+  try {
+    const liquidaciones = JSON.parse(datos) as LiquidacionPedidosYa[];
+    return Array.isArray(liquidaciones)
+      ? liquidaciones.filter(
+          (item) =>
+            Number.isInteger(item.id) &&
+            Array.isArray(item.ventaIds),
+        )
+      : [];
+  } catch {
+    localStorage.setItem(
+      CLAVE_LIQUIDACIONES_PEDIDOSYA,
+      JSON.stringify([]),
+    );
+    return [];
+  }
+}
+
+function guardarLiquidacionesPedidosYa(
+  liquidaciones: LiquidacionPedidosYa[],
+): void {
+  localStorage.setItem(
+    CLAVE_LIQUIDACIONES_PEDIDOSYA,
+    JSON.stringify(liquidaciones),
+  );
+}
+
+function fechaEnRango(
+  fecha: string,
+  fechaDesde: string,
+  fechaHasta: string,
+): boolean {
+  const tiempo = new Date(fecha).getTime();
+  const desde = new Date(`${fechaDesde}T00:00:00`).getTime();
+  const hasta = new Date(`${fechaHasta}T23:59:59.999`).getTime();
+  return tiempo >= desde && tiempo <= hasta;
+}
+
+export async function listarLiquidacionesPedidosYa(): Promise<LiquidacionPedidosYa[]> {
+  await esperar(250);
+
+  return obtenerLiquidacionesPedidosYaPersistidas()
+    .sort(
+      (a, b) =>
+        new Date(b.fechaHoraRegistro).getTime() -
+        new Date(a.fechaHoraRegistro).getTime(),
+    )
+    .map((item) => ({
+      ...item,
+      ventaIds: [...item.ventaIds],
+    }));
+}
+
+export async function obtenerResumenPedidosYa(
+  fechaDesde: string,
+  fechaHasta: string,
+): Promise<ResumenPedidosYaPeriodo> {
+  await esperar(250);
+
+  const ventas = obtenerVentasPersistidas().filter(
+    (venta) =>
+      venta.canalVenta === "PedidosYa" &&
+      venta.estadoCobro !== "Anulada" &&
+      fechaEnRango(
+        venta.fechaHoraRegistro,
+        fechaDesde,
+        fechaHasta,
+      ),
+  );
+
+  const pedidosEnCurso = ventas.filter(
+    (venta) =>
+      venta.estadoCobro === "Pendiente de liquidación" &&
+      venta.estadoPreparacion !== "Entregado",
+  );
+
+  // Solo un pedido que ya fue entregado al repartidor se considera
+  // una deuda exigible de PedidosYa. Esto evita liquidar pedidos que
+  // todavía se encuentran en cola, preparación o listos.
+  const pedidosPendientes = ventas.filter(
+    (venta) =>
+      venta.estadoCobro === "Pendiente de liquidación" &&
+      venta.estadoPreparacion === "Entregado",
+  );
+
+  const pedidosLiquidados = ventas.filter(
+    (venta) => venta.estadoCobro === "Liquidada",
+  );
+
+  const liquidaciones =
+    obtenerLiquidacionesPedidosYaPersistidas()
+      .filter(
+        (liquidacion) =>
+          liquidacion.fechaHasta >= fechaDesde &&
+          liquidacion.fechaDesde <= fechaHasta,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.fechaHoraRegistro).getTime() -
+          new Date(a.fechaHoraRegistro).getTime(),
+      );
+
+  return {
+    fechaDesde,
+    fechaHasta,
+    pedidosEnCurso: pedidosEnCurso.map(clonarVenta),
+    cantidadEnCurso: pedidosEnCurso.length,
+    montoEnCurso: redondearMoneda(
+      pedidosEnCurso.reduce(
+        (total, venta) => total + venta.total,
+        0,
+      ),
+    ),
+    pedidosPendientes: pedidosPendientes.map(clonarVenta),
+    cantidadPendiente: pedidosPendientes.length,
+    montoPendiente: redondearMoneda(
+      pedidosPendientes.reduce(
+        (total, venta) => total + venta.total,
+        0,
+      ),
+    ),
+    pedidosLiquidados: pedidosLiquidados.map(clonarVenta),
+    cantidadLiquidada: pedidosLiquidados.length,
+    montoLiquidado: redondearMoneda(
+      pedidosLiquidados.reduce(
+        (total, venta) => total + venta.total,
+        0,
+      ),
+    ),
+    liquidaciones: liquidaciones.map((item) => ({
+      ...item,
+      ventaIds: [...item.ventaIds],
+    })),
+  };
+}
+
+export async function registrarLiquidacionPedidosYa(
+  datos: RegistrarLiquidacionPedidosYaDto,
+  usuario: UsuarioSesion,
+): Promise<LiquidacionPedidosYa> {
+  await esperar(550);
+
+  if (!usuario.permisos.includes("REPORTES_PEDIDOSYA_LIQUIDAR")) {
+    throw new Error(
+      "No tienes permiso para registrar liquidaciones de PedidosYa.",
+    );
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaDesde) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaHasta) ||
+      datos.fechaDesde > datos.fechaHasta) {
+    throw new Error(
+      "Selecciona un rango de fechas válido para la liquidación.",
+    );
+  }
+
+  if (!Number.isFinite(datos.montoRecibido) || datos.montoRecibido <= 0) {
+    throw new Error(
+      "El monto transferido por PedidosYa debe ser un valor válido mayor a cero.",
+    );
+  }
+
+  const ventas = obtenerVentasPersistidas();
+  const elegibles = ventas.filter(
+    (venta) =>
+      venta.canalVenta === "PedidosYa" &&
+      venta.estadoCobro === "Pendiente de liquidación" &&
+      venta.estadoPreparacion === "Entregado" &&
+      fechaEnRango(
+        venta.fechaHoraRegistro,
+        datos.fechaDesde,
+        datos.fechaHasta,
+      ),
+  );
+
+  if (elegibles.length === 0) {
+    throw new Error(
+      "No existen pedidos de PedidosYa ya entregados y pendientes de liquidación dentro del periodo seleccionado.",
+    );
+  }
+
+  const montoBruto = redondearMoneda(
+    elegibles.reduce(
+      (total, venta) => total + venta.total,
+      0,
+    ),
+  );
+  const montoRecibido = redondearMoneda(datos.montoRecibido);
+  const diferencia = redondearMoneda(montoRecibido - montoBruto);
+  const observacion = datos.observacion?.trim() || null;
+
+  if (Math.abs(diferencia) > 0.009 && !observacion) {
+    throw new Error(
+      "Registra una observación cuando el monto transferido sea diferente al total bruto de los pedidos seleccionados.",
+    );
+  }
+
+  const liquidaciones = obtenerLiquidacionesPedidosYaPersistidas();
+  const id = liquidaciones.length === 0
+    ? 1
+    : Math.max(...liquidaciones.map((item) => item.id)) + 1;
+  const fechaHoraRegistro = new Date().toISOString();
+
+  const liquidacion: LiquidacionPedidosYa = {
+    id,
+    numeroLiquidacion: `PY-${String(id).padStart(4, "0")}`,
+    fechaDesde: datos.fechaDesde,
+    fechaHasta: datos.fechaHasta,
+    ventaIds: elegibles.map((venta) => venta.id),
+    cantidadPedidos: elegibles.length,
+    montoBruto,
+    montoRecibido,
+    diferencia,
+    usuarioId: usuario.id,
+    usuarioNombre: usuario.nombreCompleto,
+    observacion,
+    fechaHoraRegistro,
+  };
+
+  const ids = new Set(liquidacion.ventaIds);
+  const ventasActualizadas = ventas.map((venta) =>
+    ids.has(venta.id)
+      ? {
+          ...venta,
+          estadoCobro: "Liquidada" as const,
+          liquidacionPedidosYaId: id,
+          fechaHoraLiquidacionPedidosYa: fechaHoraRegistro,
+          fechaHoraActualizacion: fechaHoraRegistro,
+        }
+      : venta,
+  );
+
+  guardarVentas(ventasActualizadas);
+  guardarLiquidacionesPedidosYa([
+    ...liquidaciones,
+    liquidacion,
+  ]);
+
+  window.dispatchEvent(
+    new CustomEvent("roma-pedidosya-actualizado"),
+  );
+
+  return {
+    ...liquidacion,
+    ventaIds: [...liquidacion.ventaIds],
+  };
 }
 
 function obtenerSiguienteId(
@@ -400,6 +801,11 @@ async function resolverCliente(
 async function construirDetalles(
   datos: CrearVentaDto,
 ): Promise<DetalleVenta[]> {
+  const canalVenta: CanalVenta =
+    datos.canalVenta === "PedidosYa"
+      ? "PedidosYa"
+      : "Local";
+
   if (
     !Array.isArray(
       datos.detalles,
@@ -463,6 +869,17 @@ async function construirDetalles(
       }
 
       if (
+        canalVenta === "PedidosYa" &&
+        (!producto.disponiblePedidosYa ||
+          producto.precioPedidosYa === null ||
+          producto.precioPedidosYa <= 0)
+      ) {
+        throw new Error(
+          `El producto “${producto.nombre}” no está habilitado para PedidosYa o no tiene un precio válido en ese canal.`,
+        );
+      }
+
+      if (
         !Number.isInteger(
           detalle.cantidad,
         ) ||
@@ -481,6 +898,11 @@ async function construirDetalles(
           `La observación de “${producto.nombre}”`,
         );
 
+      const precioUnitario =
+        canalVenta === "PedidosYa"
+          ? producto.precioPedidosYa as number
+          : producto.precio;
+
       return {
         productoId:
           producto.id,
@@ -491,8 +913,7 @@ async function construirDetalles(
         nombreProducto:
           producto.nombre,
 
-        precioUnitario:
-          producto.precio,
+        precioUnitario,
 
         cantidad:
           detalle.cantidad,
@@ -501,9 +922,13 @@ async function construirDetalles(
 
         subtotal:
           redondearMoneda(
-            producto.precio *
+            precioUnitario *
               detalle.cantidad,
           ),
+
+        requierePreparacion:
+          producto.modoPreparacion !==
+          "Entrega directa",
       };
     },
   );
@@ -518,6 +943,8 @@ async function validarVenta(
   detalles: DetalleVenta[];
   observaciones: string | null;
   subtotal: number;
+  canalVenta: CanalVenta;
+  referenciaPedidosYa: string | null;
 }> {
   const [
     cliente,
@@ -545,11 +972,27 @@ async function validarVenta(
       ),
     );
 
+  const canalVenta: CanalVenta =
+    datos.canalVenta === "PedidosYa"
+      ? "PedidosYa"
+      : "Local";
+
+  const referenciaPedidosYa =
+    canalVenta === "PedidosYa"
+      ? normalizarTextoOpcional(
+          datos.referenciaPedidosYa ?? null,
+          80,
+          "La referencia de PedidosYa",
+        )
+      : null;
+
   return {
     ...cliente,
     detalles,
     observaciones,
     subtotal,
+    canalVenta,
+    referenciaPedidosYa,
   };
 }
 
@@ -621,11 +1064,32 @@ export async function crearVenta(
   const fechaHoraActual =
     new Date().toISOString();
 
+  const modoInicioPreparacion =
+    obtenerModoInicioPreparacion();
+
+  const requierePreparacion =
+    datosValidados.detalles.some(
+      (detalle) =>
+        detalle.requierePreparacion,
+    );
+
+  const estadoPreparacionInicial:
+    EstadoPreparacion = requierePreparacion
+      ? modoInicioPreparacion
+      : "Entrega directa";
+
   const nuevaVenta: Venta = {
     id,
 
     numeroPedido:
       generarNumeroPedido(id),
+
+    canalVenta:
+      datosValidados.canalVenta,
+    referenciaPedidosYa:
+      datosValidados.referenciaPedidosYa,
+    liquidacionPedidosYaId: null,
+    fechaHoraLiquidacionPedidosYa: null,
 
     tipoCliente:
       datosValidados.tipoCliente,
@@ -651,6 +1115,8 @@ export async function crearVenta(
     observaciones:
       datosValidados.observaciones,
 
+    requierePreparacion,
+
     subtotal:
       datosValidados.subtotal,
 
@@ -664,10 +1130,12 @@ export async function crearVenta(
       datosValidados.subtotal,
 
     estadoPreparacion:
-      "En preparación",
+      estadoPreparacionInicial,
 
     estadoCobro:
-      "Pendiente de cobro",
+      datosValidados.canalVenta === "PedidosYa"
+        ? "Pendiente de liquidación"
+        : "Pendiente de cobro",
 
     pagoId: null,
     metodoPago: null,
@@ -678,10 +1146,17 @@ export async function crearVenta(
       fechaHoraActual,
 
     fechaHoraInicioPreparacion:
-      fechaHoraActual,
+      estadoPreparacionInicial === "En preparación"
+        ? fechaHoraActual
+        : null,
 
     fechaHoraListo: null,
     fechaHoraEntregado: null,
+
+    usuarioEntregaId: null,
+    usuarioEntregaNombre: null,
+    sesionCajaIdEntrega: null,
+
     fechaHoraCobro: null,
     fechaHoraAnulacion: null,
 
@@ -702,6 +1177,11 @@ export async function cambiarEstadoPreparacion(
   id: number,
   nuevoEstado:
     EstadoPreparacion,
+  entrega?: {
+    usuarioId: number;
+    usuarioNombre: string;
+    sesionCajaId: number;
+  },
 ): Promise<Venta> {
   await esperar(450);
 
@@ -727,8 +1207,16 @@ export async function cambiarEstadoPreparacion(
       EstadoPreparacion,
       EstadoPreparacion[]
     > = {
+    "En cola": [
+      "En preparación",
+    ],
+
     "En preparación": [
       "Listo",
+    ],
+
+    "Entrega directa": [
+      "Entregado",
     ],
 
     Listo: [
@@ -749,6 +1237,18 @@ export async function cambiarEstadoPreparacion(
     );
   }
 
+  if (
+    nuevoEstado === "Entregado" &&
+    ventaActual.canalVenta === "PedidosYa" &&
+    (!entrega ||
+      !Number.isInteger(entrega.sesionCajaId) ||
+      entrega.sesionCajaId <= 0)
+  ) {
+    throw new Error(
+      "Para entregar un pedido de PedidosYa debes tener tu propia caja abierta. Así quedará registrado quién realizó la entrega al repartidor.",
+    );
+  }
+
   const fechaHoraActual =
     new Date().toISOString();
 
@@ -758,6 +1258,11 @@ export async function cambiarEstadoPreparacion(
 
     estadoPreparacion:
       nuevoEstado,
+
+    fechaHoraInicioPreparacion:
+      nuevoEstado === "En preparación"
+        ? fechaHoraActual
+        : ventaActual.fechaHoraInicioPreparacion,
 
     fechaHoraListo:
       nuevoEstado === "Listo"
@@ -769,6 +1274,19 @@ export async function cambiarEstadoPreparacion(
         ? fechaHoraActual
         : ventaActual
             .fechaHoraEntregado,
+
+    usuarioEntregaId:
+      nuevoEstado === "Entregado" && entrega
+        ? entrega.usuarioId
+        : ventaActual.usuarioEntregaId,
+    usuarioEntregaNombre:
+      nuevoEstado === "Entregado" && entrega
+        ? entrega.usuarioNombre
+        : ventaActual.usuarioEntregaNombre,
+    sesionCajaIdEntrega:
+      nuevoEstado === "Entregado" && entrega
+        ? entrega.sesionCajaId
+        : ventaActual.sesionCajaIdEntrega,
 
     fechaHoraActualizacion:
       fechaHoraActual,
@@ -808,6 +1326,12 @@ export async function registrarCobroVenta(
   const ventaActual =
     ventas[indice];
 
+  if (ventaActual.canalVenta === "PedidosYa") {
+    throw new Error(
+      "Los pedidos de PedidosYa no se cobran en caja. Su importe se controla mediante liquidaciones administrativas.",
+    );
+  }
+
   if (
     ventaActual.estadoCobro ===
     "Cobrada"
@@ -830,12 +1354,12 @@ export async function registrarCobroVenta(
 
   if (
     !Number.isFinite(
-      datos.totalCobrado,
+      datos.totalVenta,
     ) ||
-    datos.totalCobrado <= 0
+    datos.totalVenta <= 0
   ) {
     throw new Error(
-      "El total cobrado no es válido.",
+      "El total de la venta no es válido.",
     );
   }
 
@@ -856,10 +1380,12 @@ export async function registrarCobroVenta(
       datos.montoDescuento,
 
     total:
-      datos.totalCobrado,
+      datos.totalVenta,
 
     estadoCobro:
-      "Cobrada",
+      datos.pagoCompleto
+        ? "Cobrada"
+        : "Pendiente de cobro",
 
     pagoId:
       datos.pagoId,
@@ -868,7 +1394,9 @@ export async function registrarCobroVenta(
       datos.metodoPago,
 
     fechaHoraCobro:
-      datos.fechaHoraCobro,
+      datos.pagoCompleto
+        ? datos.fechaHoraCobro
+        : null,
 
     fechaHoraActualizacion:
       datos.fechaHoraCobro,

@@ -26,6 +26,10 @@ import type {
   UsuarioSesion,
 } from "../tipos/auth";
 
+import type {
+  PermisoSistema,
+} from "../tipos/rol";
+
 import {
   actualizarProducto,
   cambiarControlInventarioProducto,
@@ -59,6 +63,27 @@ const CLAVE_CONSUMOS =
 
 const CLAVE_CONTEOS =
   "roma-inventario-conteos-v1";
+
+function exigirPermisoInventario(
+  usuario: UsuarioSesion,
+  permiso: PermisoSistema,
+  mensaje: string,
+): void {
+  const esAdministrador =
+    usuario.rol === "Administrador" ||
+    usuario.roles?.includes(
+      "Administrador",
+    );
+
+  if (
+    esAdministrador ||
+    usuario.permisos.includes(permiso)
+  ) {
+    return;
+  }
+
+  throw new Error(mensaje);
+}
 
 function esperar(
   milisegundos: number,
@@ -901,6 +926,20 @@ export async function crearInsumoInventario(
   garantizarDatosIniciales();
   await esperar(600);
 
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_INSUMOS_CREAR",
+    "No tienes permiso para registrar insumos.",
+  );
+
+  if (datos.stockInicialCompra > 0) {
+    exigirPermisoInventario(
+      usuario,
+      "INVENTARIO_ENTRADAS",
+      "Necesitas permiso para registrar entradas si el nuevo insumo tendrá stock inicial.",
+    );
+  }
+
   const insumos =
     obtenerInsumosPersistidos();
 
@@ -1126,6 +1165,12 @@ export async function actualizarInsumoInventario(
   garantizarDatosIniciales();
   await esperar(600);
 
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_INSUMOS_EDITAR",
+    "No tienes permiso para modificar insumos.",
+  );
+
   const insumos =
     obtenerInsumosPersistidos();
 
@@ -1277,6 +1322,12 @@ export async function cambiarEstadoInsumoInventario(
   garantizarDatosIniciales();
   await esperar(450);
 
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_ESTADO_INSUMO",
+    "No tienes permiso para activar o desactivar insumos.",
+  );
+
   const insumos =
     obtenerInsumosPersistidos();
 
@@ -1324,6 +1375,12 @@ export async function registrarEntradaInventario(
 ): Promise<MovimientoInventario> {
   garantizarDatosIniciales();
   await esperar(550);
+
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_ENTRADAS",
+    "No tienes permiso para registrar entradas de inventario.",
+  );
 
   const insumos =
     obtenerInsumosPersistidos();
@@ -1585,6 +1642,16 @@ export async function registrarAjusteManualInventario(
       "El ajuste debe ser diferente de cero.",
     );
   }
+
+  exigirPermisoInventario(
+    usuario,
+    datos.cantidadAjuste > 0
+      ? "INVENTARIO_AJUSTES_AUMENTAR"
+      : "INVENTARIO_AJUSTES_DISMINUIR",
+    datos.cantidadAjuste > 0
+      ? "No tienes permiso para registrar ajustes positivos de inventario."
+      : "No tienes permiso para registrar ajustes negativos de inventario.",
+  );
 
   const motivo =
     datos.motivo.trim();
@@ -1957,6 +2024,22 @@ export async function guardarNuevaVersionReceta(
 
   return clonarReceta(
     nuevaReceta,
+  );
+}
+
+export async function guardarNuevaVersionRecetaInventario(
+  datos: GuardarRecetaProductoDto,
+  usuario: UsuarioSesion,
+): Promise<RecetaProducto> {
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_RECETAS_GESTIONAR",
+    "No tienes permiso para gestionar recetas desde Inventario.",
+  );
+
+  return guardarNuevaVersionReceta(
+    datos,
+    usuario,
   );
 }
 
@@ -3111,6 +3194,12 @@ export async function registrarConteoFisicoInventario(
 ): Promise<ConteoFisicoInventario> {
   garantizarDatosIniciales();
   await esperar(650);
+
+  exigirPermisoInventario(
+    usuario,
+    "INVENTARIO_CONTEOS_REGISTRAR",
+    "No tienes permiso para registrar conteos físicos.",
+  );
 
   if (
     !Array.isArray(

@@ -208,7 +208,7 @@ function PanelAlertas({
       ) : (
         <div
           className="
-            mt-5 max-h-[540px]
+            mt-5 max-h-135
             space-y-3 overflow-y-auto
             pr-1
           "

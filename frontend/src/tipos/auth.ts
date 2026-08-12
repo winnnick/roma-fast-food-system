@@ -2,6 +2,7 @@ export const rolesUsuario = [
   "Administrador",
   "Cajero",
   "Inventario",
+  "Auxiliar",
 ] as const;
 
 export type RolUsuario =
@@ -25,7 +26,7 @@ export interface UsuarioSesion {
 
   /**
    * Roles efectivos del usuario. Para empleados puede
-   * contener Cajero + Inventario. Administrador se maneja
+   * contener Cajero, Inventario y/o Auxiliar. Administrador se maneja
    * como rol exclusivo porque ya concede acceso completo.
    */
   roles: RolUsuario[];

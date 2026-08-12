@@ -98,15 +98,33 @@ function LayoutPrincipal() {
   }, [temaOscuro]);
 
   useEffect(() => {
-    document.body.style.overflow =
-      menuMovilAbierto
-        ? "hidden"
-        : "";
+    const html = document.documentElement;
+    const body = document.body;
+
+    const overflowHtmlAnterior =
+      html.style.overflow;
+    const overflowBodyAnterior =
+      body.style.overflow;
+
+    /*
+     * Mientras el layout autenticado está montado, el documento
+     * exterior no debe desplazarse. El único scroll vertical
+     * permitido pertenece al <main> de la aplicación.
+     *
+     * Se bloquean HTML y BODY porque en Chromium el elemento
+     * desplazable del viewport normalmente es <html>; bloquear
+     * únicamente <body> puede dejar un scroll residual.
+     */
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
 
     return () => {
-      document.body.style.overflow = "";
+      html.style.overflow =
+        overflowHtmlAnterior;
+      body.style.overflow =
+        overflowBodyAnterior;
     };
-  }, [menuMovilAbierto]);
+  }, []);
 
   /*
    * Atajos globales invisibles:
@@ -168,8 +186,8 @@ function LayoutPrincipal() {
   return (
     <div
       className={`
-        min-h-screen
-        overflow-x-hidden
+        fixed inset-0 w-full max-w-full
+        overflow-hidden
         text-slate-900
         transition-colors
         duration-300
@@ -192,9 +210,9 @@ function LayoutPrincipal() {
 
       <div
         className={`
-          flex min-h-screen
-          min-w-0 flex-col
-          transition-[padding]
+          grid h-full min-h-0 w-full max-w-full
+          min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]
+          overflow-hidden transition-[padding]
           duration-300
           ${
             barraContraida
@@ -232,16 +250,16 @@ function LayoutPrincipal() {
 
         <main
           className="
-            min-w-0 flex-1
-            px-4 py-5
+            min-h-0 min-w-0 max-w-full
+            overflow-x-hidden overflow-y-auto px-4 py-5
             sm:px-6 sm:py-6
             lg:px-8 lg:py-7
           "
         >
           <div
             className="
-              mx-auto w-full
-              max-w-[1600px]
+              mx-auto min-h-0 min-w-0 w-full
+              max-w-[1600px] overflow-x-hidden
             "
           >
             <Outlet />

@@ -48,8 +48,9 @@ function FormularioAnulacionInventario({
 
   const [tratamiento, setTratamiento] =
     useState<TratamientoAnulacionInventario>(
-      venta.estadoPreparacion ===
-        "En preparación"
+      venta.estadoPreparacion === "En cola" ||
+      venta.estadoPreparacion === "En preparación" ||
+      venta.estadoPreparacion === "Entrega directa"
         ? "Reintegrar insumos"
         : "Registrar como merma",
     );
@@ -102,20 +103,22 @@ function FormularioAnulacionInventario({
             rounded-2xl border
             border-red-200
             bg-red-50 p-4
+            dark:border-red-900/60
+            dark:bg-red-950/25
           "
         >
           <div className="flex items-start gap-3">
             <Ban
               size={22}
-              className="mt-0.5 shrink-0 text-red-700"
+              className="mt-0.5 shrink-0 text-red-700 dark:text-red-400"
             />
 
             <div>
-              <p className="font-black text-red-950">
+              <p className="font-black text-red-950 dark:text-red-200">
                 {venta.numeroPedido}
               </p>
 
-              <p className="mt-1 text-xs leading-relaxed text-red-700">
+              <p className="mt-1 text-xs leading-relaxed text-red-700 dark:text-red-300">
                 La anulación conservará el historial del pedido y deberá definir el tratamiento de los insumos cuando exista consumo automático.
               </p>
             </div>
@@ -129,20 +132,22 @@ function FormularioAnulacionInventario({
               justify-center rounded-2xl
               border border-slate-200
               bg-slate-50
+              dark:border-slate-700
+              dark:bg-slate-950/40
             "
           >
             <LoaderCircle
               size={24}
-              className="animate-spin text-red-700"
+              className="animate-spin text-red-700 dark:text-red-400"
             />
 
-            <span className="ml-3 text-sm font-bold text-slate-600">
+            <span className="ml-3 text-sm font-bold text-slate-600 dark:text-slate-300">
               Verificando movimientos de inventario...
             </span>
           </div>
         ) : tieneConsumoInventario ? (
           <section>
-            <p className="text-sm font-bold text-slate-700">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
               Tratamiento del inventario
             </p>
 
@@ -154,8 +159,8 @@ function FormularioAnulacionInventario({
                   ${
                     tratamiento ===
                     "Reintegrar insumos"
-                      ? "border-emerald-600 bg-emerald-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
+                      ? "border-emerald-600 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30"
+                      : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                   }
                 `}
               >
@@ -178,15 +183,15 @@ function FormularioAnulacionInventario({
 
                   <RotateCcw
                     size={21}
-                    className="mt-0.5 shrink-0 text-emerald-700"
+                    className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-400"
                   />
 
                   <span>
-                    <span className="block text-sm font-black text-slate-900">
+                    <span className="block text-sm font-black text-slate-900 dark:text-white">
                       Reintegrar insumos
                     </span>
 
-                    <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                    <span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                       Utilízalo cuando el pedido todavía no fue preparado y los insumos continúan disponibles.
                     </span>
                   </span>
@@ -200,8 +205,8 @@ function FormularioAnulacionInventario({
                   ${
                     tratamiento ===
                     "Registrar como merma"
-                      ? "border-orange-600 bg-orange-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
+                      ? "border-orange-600 bg-orange-50 dark:border-orange-700 dark:bg-orange-950/30"
+                      : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
                   }
                 `}
               >
@@ -224,15 +229,15 @@ function FormularioAnulacionInventario({
 
                   <PackageX
                     size={21}
-                    className="mt-0.5 shrink-0 text-orange-700"
+                    className="mt-0.5 shrink-0 text-orange-700 dark:text-orange-400"
                   />
 
                   <span>
-                    <span className="block text-sm font-black text-slate-900">
+                    <span className="block text-sm font-black text-slate-900 dark:text-white">
                       Registrar como merma
                     </span>
 
-                    <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                    <span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                       Utilízalo cuando el pedido ya fue preparado y los insumos no pueden recuperarse.
                     </span>
                   </span>
@@ -246,13 +251,15 @@ function FormularioAnulacionInventario({
               rounded-2xl border
               border-blue-200
               bg-blue-50 p-4
+              dark:border-blue-900/60
+              dark:bg-blue-950/25
             "
           >
-            <p className="text-sm font-black text-blue-950">
+            <p className="text-sm font-black text-blue-950 dark:text-blue-200">
               Venta sin consumo automático registrado
             </p>
 
-            <p className="mt-1 text-xs leading-relaxed text-blue-700">
+            <p className="mt-1 text-xs leading-relaxed text-blue-700 dark:text-blue-300">
               El pedido puede ser anterior a la integración de inventario o contener productos sin receta. La anulación no generará una reversión ni una merma automática.
             </p>
           </section>
@@ -261,7 +268,7 @@ function FormularioAnulacionInventario({
         <div>
           <label
             htmlFor="motivo-anulacion-inventario"
-            className="text-sm font-bold text-slate-700"
+            className="text-sm font-bold text-slate-700 dark:text-slate-200"
           >
             Motivo de anulación
           </label>
@@ -286,21 +293,29 @@ function FormularioAnulacionInventario({
             className="
               mt-2 w-full resize-none
               rounded-xl border
-              border-slate-300 px-4
-              py-3 text-sm outline-none
+              border-slate-300 bg-white px-4
+              py-3 text-sm text-slate-900 outline-none
+              placeholder:text-slate-400
               focus:border-red-600
               focus:ring-4
               focus:ring-red-100
               disabled:bg-slate-100
+              dark:border-slate-700
+              dark:bg-slate-950
+              dark:text-white
+              dark:placeholder:text-slate-500
+              dark:focus:border-red-500
+              dark:focus:ring-red-950/50
+              dark:disabled:bg-slate-800
             "
           />
 
           <div className="mt-1 flex justify-between gap-3">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Mínimo 5 caracteres.
             </p>
 
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-400 dark:text-slate-500">
               {motivo.length}/200
             </span>
           </div>
@@ -314,6 +329,9 @@ function FormularioAnulacionInventario({
               bg-red-50 p-3
               text-sm font-semibold
               text-red-700
+              dark:border-red-900/60
+              dark:bg-red-950/30
+              dark:text-red-300
             "
           >
             {error}
@@ -324,8 +342,10 @@ function FormularioAnulacionInventario({
       <footer
         className="
           flex flex-col-reverse gap-3
-          border-t border-slate-100
+          border-t border-slate-200
           bg-slate-50 px-5 py-4
+          dark:border-slate-700
+          dark:bg-slate-950/70
           sm:flex-row sm:justify-end
           sm:px-6
         "
@@ -342,6 +362,10 @@ function FormularioAnulacionInventario({
             px-5 py-3 text-sm
             font-bold text-slate-700
             hover:bg-slate-100
+            dark:border-slate-600
+            dark:bg-slate-800
+            dark:text-slate-200
+            dark:hover:bg-slate-700
             disabled:opacity-50
           "
         >

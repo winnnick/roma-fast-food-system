@@ -6,6 +6,10 @@ export type ControlInventarioProducto =
   | "Con receta"
   | "No controla inventario";
 
+export type ModoPreparacionProducto =
+  | "Requiere preparación"
+  | "Entrega directa";
+
 export interface CategoriaProducto {
   id: number;
   nombre: string;
@@ -32,9 +36,13 @@ export interface ProductoMenu {
   descripcion: string;
   categoriaId: number;
   precio: number;
+  disponiblePedidosYa: boolean;
+  precioPedidosYa: number | null;
   estado: EstadoCatalogo;
   disponible: boolean;
   destacado: boolean;
+  modoPreparacion:
+    ModoPreparacionProducto;
   controlInventario:
     ControlInventarioProducto;
   imagenUrl: string | null;
@@ -48,8 +56,12 @@ export interface CrearProductoDto {
   descripcion: string;
   categoriaId: number;
   precio: number;
+  disponiblePedidosYa?: boolean;
+  precioPedidosYa?: number | null;
   disponible: boolean;
   destacado: boolean;
+  modoPreparacion?:
+    ModoPreparacionProducto;
   controlInventario?:
     ControlInventarioProducto;
   imagenUrl?: string | null;
@@ -61,8 +73,12 @@ export interface ActualizarProductoDto {
   descripcion: string;
   categoriaId: number;
   precio: number;
+  disponiblePedidosYa?: boolean;
+  precioPedidosYa?: number | null;
   disponible: boolean;
   destacado: boolean;
+  modoPreparacion?:
+    ModoPreparacionProducto;
   controlInventario?:
     ControlInventarioProducto;
   imagenUrl?: string | null;

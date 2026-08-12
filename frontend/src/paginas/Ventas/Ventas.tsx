@@ -46,8 +46,10 @@ import {
 } from "../../servicios/clienteServicio";
 
 import {
+  actualizarModoInicioPreparacion,
   cambiarEstadoPreparacion,
   listarVentas,
+  obtenerModoInicioPreparacion,
   obtenerVentaPorId,
 } from "../../servicios/ventaServicio";
 
@@ -59,8 +61,8 @@ import {
 } from "../../servicios/ventaInventarioServicio";
 
 import {
+  listarPagosPorVentaId,
   obtenerCajaAbiertaPorUsuario,
-  obtenerPagoPorVentaId,
   registrarPagoVenta,
 } from "../../servicios/cajaServicio";
 
@@ -76,6 +78,7 @@ import type {
 import type {
   CrearVentaDto,
   EstadoPreparacion,
+  ModoInicioPreparacion,
   Venta,
 } from "../../tipos/venta";
 
@@ -208,6 +211,7 @@ function escaparHtml(
 function imprimirTicket(
   venta: Venta,
   pago: PagoVenta | null,
+  montoPagadoAcumulado = 0,
 ) {
   const ventana = window.open(
     "",
@@ -235,15 +239,23 @@ function imprimirTicket(
     )
     .join("");
 
-  const detallePago = pago
+  const detallePago = venta.canalVenta === "PedidosYa"
     ? `
-      <p><strong>Método:</strong> ${escaparHtml(pago.metodoPago)}</p>
-      ${pago.montoQr > 0 ? `<p><strong>QR:</strong> ${formatearMoneda(pago.montoQr)}</p>` : ""}
-      ${pago.montoEfectivo > 0 ? `<p><strong>Efectivo aplicado:</strong> ${formatearMoneda(pago.montoEfectivo)}</p>` : ""}
-      ${pago.montoRecibido > 0 ? `<p><strong>Recibido:</strong> ${formatearMoneda(pago.montoRecibido)}</p>` : ""}
-      ${pago.cambio > 0 ? `<p><strong>Cambio:</strong> ${formatearMoneda(pago.cambio)}</p>` : ""}
+      <p><strong>Canal:</strong> PedidosYa</p>
+      ${venta.referenciaPedidosYa ? `<p><strong>Referencia:</strong> ${escaparHtml(venta.referenciaPedidosYa)}</p>` : ""}
+      <p><strong>Liquidación:</strong> ${escaparHtml(venta.estadoCobro)}</p>
     `
-    : `<p><strong>Pago:</strong> ${escaparHtml(venta.estadoCobro)}</p>`;
+    : pago
+      ? `
+        <p><strong>${venta.estadoCobro === "Cobrada" ? "Método" : "Último abono"}:</strong> ${escaparHtml(pago.metodoPago)}</p>
+        <p><strong>Pagado acumulado:</strong> ${formatearMoneda(montoPagadoAcumulado)}</p>
+        ${venta.estadoCobro === "Pendiente de cobro" ? `<p><strong>Saldo pendiente:</strong> ${formatearMoneda(Math.max(0, venta.total - montoPagadoAcumulado))}</p>` : ""}
+        ${pago.montoQr > 0 ? `<p><strong>QR:</strong> ${formatearMoneda(pago.montoQr)}</p>` : ""}
+        ${pago.montoEfectivo > 0 ? `<p><strong>Efectivo aplicado:</strong> ${formatearMoneda(pago.montoEfectivo)}</p>` : ""}
+        ${pago.montoRecibido > 0 ? `<p><strong>Recibido:</strong> ${formatearMoneda(pago.montoRecibido)}</p>` : ""}
+        ${pago.cambio > 0 ? `<p><strong>Cambio:</strong> ${formatearMoneda(pago.cambio)}</p>` : ""}
+      `
+      : `<p><strong>Pago:</strong> ${escaparHtml(venta.estadoCobro)}</p>`;
 
   ventana.document.write(`
     <!doctype html>
@@ -252,21 +264,31 @@ function imprimirTicket(
         <meta charset="utf-8" />
         <title>${escaparHtml(venta.numeroPedido)}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 24px; color: #111827; }
-          .ticket { width: 320px; margin: 0 auto; }
+          @page { size: 80mm auto; margin: 4mm; }
+          * { box-sizing: border-box; color: #000 !important; background: #fff !important; }
+          html, body { margin: 0; padding: 0; background: #fff; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+          .ticket { width: 72mm; max-width: 100%; margin: 0 auto; }
           h1, h2, p { margin: 0; }
-          h1 { text-align: center; font-size: 24px; }
-          h2 { text-align: center; font-size: 13px; letter-spacing: 3px; margin-top: 4px; }
-          .pedido { text-align: center; margin: 18px 0; font-size: 18px; font-weight: 700; }
-          .datos { font-size: 12px; line-height: 1.6; }
-          table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
-          td { padding: 6px 0; border-bottom: 1px dashed #cbd5e1; vertical-align: top; }
-          .obs { color: #64748b; font-size: 11px; padding-top: 0; }
-          .totales { margin-top: 16px; font-size: 12px; line-height: 1.6; }
-          .total { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 18px; font-weight: 800; }
-          .generales { margin-top: 14px; padding: 10px; border: 1px dashed #cbd5e1; font-size: 11px; }
-          .pie { margin-top: 22px; text-align: center; font-size: 11px; color: #475569; }
-          @media print { body { padding: 0; } }
+          h1 { text-align: center; font-size: 24px; line-height: 1; letter-spacing: -1px; }
+          h2 { text-align: center; font-size: 10px; letter-spacing: 4px; margin-top: 4px; }
+          .pedido { text-align: center; margin: 16px 0; padding: 8px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; font-size: 18px; font-weight: 800; }
+          .datos { font-size: 11px; line-height: 1.55; }
+          table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 11px; }
+          td { padding: 6px 0; border-bottom: 1px dashed #000; vertical-align: top; }
+          td:last-child { padding-left: 8px; }
+          .obs { font-size: 10px; font-style: italic; padding-top: 2px; }
+          .totales { margin-top: 14px; font-size: 11px; line-height: 1.6; }
+          .linea { display: flex; justify-content: space-between; gap: 10px; }
+          .total { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 8px 0; border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 17px; font-weight: 900; }
+          .generales { margin-top: 12px; padding: 8px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; font-size: 10px; line-height: 1.45; }
+          .pie { margin-top: 18px; padding-top: 10px; border-top: 1px dashed #000; text-align: center; font-size: 10px; }
+          @media screen { body { padding: 20px; } }
+          @media print {
+            html, body { width: 80mm; }
+            body { padding: 0; }
+            .ticket { width: 72mm; }
+          }
         </style>
       </head>
       <body>
@@ -278,6 +300,7 @@ function imprimirTicket(
           <div class="datos">
             <p><strong>Cliente:</strong> ${escaparHtml(venta.clienteNombre)}</p>
             <p><strong>Atendido por:</strong> ${escaparHtml(venta.usuarioRegistroNombre)}</p>
+            <p><strong>Canal:</strong> ${escaparHtml(venta.canalVenta)}</p>
             <p><strong>Fecha:</strong> ${escaparHtml(formatearFechaHoraTicket(venta.fechaHoraRegistro))}</p>
           </div>
 
@@ -288,8 +311,8 @@ function imprimirTicket(
           ${venta.observaciones ? `<div class="generales"><strong>OBSERVACIONES GENERALES PARA COCINA:</strong><br />${escaparHtml(venta.observaciones)}</div>` : ""}
 
           <div class="totales">
-            <p>Subtotal: ${formatearMoneda(venta.subtotal)}</p>
-            ${venta.montoDescuento > 0 ? `<p>Descuento: - ${formatearMoneda(venta.montoDescuento)}</p>` : ""}
+            <p class="linea"><span>Subtotal</span><strong>${formatearMoneda(venta.subtotal)}</strong></p>
+            ${venta.montoDescuento > 0 ? `<p class="linea"><span>Descuento</span><strong>- ${formatearMoneda(venta.montoDescuento)}</strong></p>` : ""}
             <div class="total"><span>TOTAL</span><span>${formatearMoneda(venta.total)}</span></div>
             <div style="margin-top:10px">${detallePago}</div>
           </div>
@@ -311,14 +334,39 @@ function imprimirTicket(
 function Ventas() {
   const { usuario } = useAuth();
 
-  const puedeGestionar =
+  const puedeRegistrar =
     usuario?.permisos.includes(
       "VENTAS_CREAR",
     ) ?? false;
 
+  const puedePreparar =
+    usuario?.permisos.includes(
+      "VENTAS_PREPARAR",
+    ) ?? false;
+
+  const puedeConfigurarFlujo =
+    usuario?.permisos.includes(
+      "VENTAS_CONFIGURAR_FLUJO",
+    ) ?? false;
+
   const puedeCobrar =
     usuario?.permisos.includes(
-      "CAJA_GESTIONAR",
+      "VENTAS_COBRAR",
+    ) ?? false;
+
+  const puedeAnular =
+    usuario?.permisos.includes(
+      "VENTAS_ANULAR",
+    ) ?? false;
+
+  const puedeVerHistorial =
+    usuario?.permisos.includes(
+      "VENTAS_HISTORIAL",
+    ) ?? false;
+
+  const puedeCompartirEntrega =
+    usuario?.permisos.includes(
+      "VENTAS_COMPARTIR_ENTREGA",
     ) ?? false;
 
   const [
@@ -335,6 +383,11 @@ function Ventas() {
     pagoParaTicket,
     setPagoParaTicket,
   ] = useState<PagoVenta | null>(null);
+
+  const [
+    montoPagadoParaTicket,
+    setMontoPagadoParaTicket,
+  ] = useState(0);
 
   const [ahora, setAhora] =
     useState(() => new Date());
@@ -354,6 +407,18 @@ function Ventas() {
 
   const [ventas, setVentas] =
     useState<Venta[]>([]);
+
+  const [
+    modoInicioPreparacion,
+    setModoInicioPreparacion,
+  ] = useState<ModoInicioPreparacion>(
+    obtenerModoInicioPreparacion,
+  );
+
+  const [
+    cambiandoFlujo,
+    setCambiandoFlujo,
+  ] = useState(false);
 
   const [
     cargandoInicial,
@@ -434,6 +499,11 @@ function Ventas() {
   ] = useState<Venta | null>(null);
 
   const [
+    pagosVentaParaCobrar,
+    setPagosVentaParaCobrar,
+  ] = useState<PagoVenta[]>([]);
+
+  const [
     ventaParaCompartirEntrega,
     setVentaParaCompartirEntrega,
   ] = useState<Venta | null>(null);
@@ -466,12 +536,41 @@ function Ventas() {
   }, []);
 
   useEffect(() => {
+    const sincronizarFlujo = () => {
+      setModoInicioPreparacion(
+        obtenerModoInicioPreparacion(),
+      );
+    };
+
+    const manejarStorage = (evento: StorageEvent) => {
+      if (evento.key === "roma-ventas-flujo-preparacion-v1") {
+        sincronizarFlujo();
+      }
+    };
+
+    window.addEventListener(
+      "roma-flujo-preparacion-actualizado",
+      sincronizarFlujo,
+    );
+    window.addEventListener("storage", manejarStorage);
+
+    return () => {
+      window.removeEventListener(
+        "roma-flujo-preparacion-actualizado",
+        sincronizarFlujo,
+      );
+      window.removeEventListener("storage", manejarStorage);
+    };
+  }, []);
+
+  useEffect(() => {
     let activo = true;
 
     const temporizador =
       window.setTimeout(() => {
         if (
-          !puedeCobrar ||
+          (!puedeRegistrar &&
+            !puedeCobrar) ||
           !usuario
         ) {
           if (activo) {
@@ -502,7 +601,11 @@ function Ventas() {
         temporizador,
       );
     };
-  }, [puedeCobrar, usuario]);
+  }, [
+    puedeCobrar,
+    puedeRegistrar,
+    usuario,
+  ]);
 
   const cargarDatos =
     useCallback(async () => {
@@ -646,6 +749,12 @@ function Ventas() {
     };
   }, []);
 
+  const pedidosEnCola =
+    ventas.filter(
+      (venta) =>
+        venta.estadoPreparacion === "En cola",
+    ).length;
+
   const pedidosEnPreparacion =
     ventas.filter(
       (venta) =>
@@ -663,6 +772,7 @@ function Ventas() {
   const ventasPendientes =
     ventas.filter(
       (venta) =>
+        venta.canalVenta === "Local" &&
         venta.estadoCobro ===
         "Pendiente de cobro",
     );
@@ -681,7 +791,7 @@ function Ventas() {
   ) {
     if (
       !usuario ||
-      !puedeGestionar
+      !puedeRegistrar
     ) {
       return;
     }
@@ -709,7 +819,7 @@ function Ventas() {
         entidad: "Venta",
         entidadId: venta.id,
         descripcion:
-          `${usuario.nombreCompleto} registró ${venta.numeroPedido} por ${formatearMoneda(venta.total)}.`,
+          `${usuario.nombreCompleto} registró ${venta.numeroPedido} por ${formatearMoneda(venta.total)} mediante el canal ${venta.canalVenta}.`,
         datosPosteriores: venta,
         nivel:
           cantidadNegativos > 0
@@ -751,7 +861,9 @@ function Ventas() {
     let pagoRegistrado:
       PagoVenta | null = null;
     let mensajeCobro =
-      "El pedido quedó pendiente de cobro.";
+      venta.canalVenta === "PedidosYa"
+        ? " El importe quedó pendiente de liquidación por PedidosYa."
+        : "El pedido quedó pendiente de cobro.";
 
     if (
       cobro &&
@@ -791,10 +903,19 @@ function Ventas() {
             venta.id,
           );
 
+        const saldoPendiente =
+          Math.max(
+            0,
+            ventaFinal.total -
+              pagoRegistrado.totalCobrado,
+          );
+
         mensajeCobro =
-          pagoRegistrado.cambio > 0
-            ? ` Cobro registrado mediante ${pagoRegistrado.metodoPago}. Cambio: ${formatearMoneda(pagoRegistrado.cambio)}.`
-            : ` Cobro registrado mediante ${pagoRegistrado.metodoPago}.`;
+          ventaFinal.estadoCobro === "Cobrada"
+            ? pagoRegistrado.cambio > 0
+              ? ` Cobro registrado mediante ${pagoRegistrado.metodoPago}. Cambio: ${formatearMoneda(pagoRegistrado.cambio)}.`
+              : ` Cobro registrado mediante ${pagoRegistrado.metodoPago}.`
+            : ` Abono registrado por ${formatearMoneda(pagoRegistrado.totalCobrado)} mediante ${pagoRegistrado.metodoPago}. Saldo pendiente: ${formatearMoneda(saldoPendiente)}.`;
       } catch (errorCobro: unknown) {
         mensajeCobro =
           ` El pedido fue registrado, pero el cobro no pudo completarse y quedó pendiente: ${obtenerMensajeError(errorCobro)}`;
@@ -853,6 +974,9 @@ function Ventas() {
     setPagoParaTicket(
       pagoRegistrado,
     );
+    setMontoPagadoParaTicket(
+      pagoRegistrado?.totalCobrado ?? 0,
+    );
     setVentaParaTicket(
       ventaFinal,
     );
@@ -863,11 +987,18 @@ function Ventas() {
           ? "exito"
           : "info",
       titulo:
-        pagoRegistrado
+        pagoRegistrado &&
+        ventaFinal.estadoCobro === "Cobrada"
           ? "Pedido y cobro registrados"
+          : pagoRegistrado
+            ? "Pedido y abono registrados"
           : "Pedido registrado",
       mensaje:
-        `${ventaFinal.numeroPedido} fue enviado a preparación.${mensajeCobro}${complementoInventario}`,
+        `${ventaFinal.numeroPedido} ${
+          ventaFinal.requierePreparacion
+            ? "fue enviado al flujo de preparación"
+            : "quedó disponible para entrega directa"
+        }.${mensajeCobro}${complementoInventario}`,
     });
   }
 
@@ -877,7 +1008,7 @@ function Ventas() {
   ) {
     if (
       !usuario ||
-      !puedeGestionar
+      !puedeRegistrar
     ) {
       return;
     }
@@ -930,7 +1061,7 @@ function Ventas() {
     if (
       !ventaPendienteInventario ||
       !usuario ||
-      !puedeGestionar
+      !puedeRegistrar
     ) {
       return;
     }
@@ -956,12 +1087,73 @@ function Ventas() {
     }
   }
 
+  async function cambiarModoPreparacion(
+    nuevoModo: ModoInicioPreparacion,
+  ) {
+    if (
+      !usuario ||
+      !puedeConfigurarFlujo ||
+      nuevoModo === modoInicioPreparacion
+    ) {
+      return;
+    }
+
+    const modoAnterior = modoInicioPreparacion;
+
+    try {
+      setCambiandoFlujo(true);
+
+      const modoActualizado =
+        await actualizarModoInicioPreparacion(
+          nuevoModo,
+        );
+
+      setModoInicioPreparacion(modoActualizado);
+
+      await auditarAccion(
+        {
+          modulo: "Preparación",
+          accion: "Configurar flujo de preparación",
+          entidad: "Configuración",
+          descripcion:
+            modoActualizado === "En cola"
+              ? "Los nuevos pedidos ingresarán primero a la cola de preparación."
+              : "Los nuevos pedidos ingresarán directamente a preparación.",
+          datosAnteriores: {
+            modoInicioPreparacion: modoAnterior,
+          },
+          datosPosteriores: {
+            modoInicioPreparacion: modoActualizado,
+          },
+        },
+        usuario,
+      );
+
+      setNotificacion({
+        tipo: "exito",
+        titulo: "Flujo actualizado",
+        mensaje:
+          modoActualizado === "En cola"
+            ? "Los próximos pedidos ingresarán a la cola antes de prepararse."
+            : "Los próximos pedidos ingresarán directamente a preparación.",
+      });
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+        titulo: "No se pudo cambiar el flujo",
+        mensaje: obtenerMensajeError(error),
+      });
+    } finally {
+      setCambiandoFlujo(false);
+    }
+  }
+
   function solicitarCambioEstado(
     venta: Venta,
     nuevoEstado:
       EstadoPreparacion,
   ) {
-    if (!puedeGestionar) {
+    if (!puedePreparar) {
       return;
     }
 
@@ -974,13 +1166,42 @@ function Ventas() {
   async function confirmarCambioEstado() {
     if (
       !accionEstado ||
-      !puedeGestionar
+      !puedePreparar
     ) {
       return;
     }
 
     try {
       setProcesandoOperacion(true);
+
+      let contextoEntrega:
+        | { usuarioId: number; usuarioNombre: string; sesionCajaId: number }
+        | undefined;
+
+      if (
+        accionEstado.nuevoEstado === "Entregado" &&
+        accionEstado.venta.canalVenta === "PedidosYa"
+      ) {
+        if (!usuario) {
+          throw new Error("No se pudo identificar al usuario responsable de la entrega.");
+        }
+
+        const cajaEntrega =
+          await obtenerCajaAbiertaPorUsuario(usuario.id);
+
+        if (!cajaEntrega) {
+          throw new Error(
+            "Abre tu propia caja antes de entregar un pedido de PedidosYa. La caja se utiliza para registrar quién entregó el pedido al repartidor, sin generar un ingreso de efectivo o QR.",
+          );
+        }
+
+        setCajaAbierta(cajaEntrega);
+        contextoEntrega = {
+          usuarioId: usuario.id,
+          usuarioNombre: usuario.nombreCompleto,
+          sesionCajaId: cajaEntrega.id,
+        };
+      }
 
       let venta: Venta;
 
@@ -1000,12 +1221,14 @@ function Ventas() {
           await cambiarEstadoPreparacion(
             accionEstado.venta.id,
             "Entregado",
+            contextoEntrega,
           );
       } else {
         venta =
           await cambiarEstadoPreparacion(
             accionEstado.venta.id,
             accionEstado.nuevoEstado,
+            contextoEntrega,
           );
       }
 
@@ -1056,6 +1279,16 @@ function Ventas() {
       return;
     }
 
+    if (venta.canalVenta === "PedidosYa") {
+      setNotificacion({
+        tipo: "info",
+        titulo: "Cobro administrado por PedidosYa",
+        mensaje:
+          "Este pedido no se cobra en la caja del local. Su importe permanecerá pendiente hasta registrar la liquidación administrativa de PedidosYa.",
+      });
+      return;
+    }
+
     try {
       setProcesandoCobro(true);
 
@@ -1083,6 +1316,37 @@ function Ventas() {
       }
 
       setCajaAbierta(caja);
+
+      const pagosPrevios =
+        await listarPagosPorVentaId(
+          venta.id,
+        );
+
+      const montoPagado =
+        pagosPrevios.reduce(
+          (acumulado, pago) =>
+            acumulado + pago.totalCobrado,
+          0,
+        );
+
+      if (
+        montoPagado >= venta.total
+      ) {
+        await recargarVentas();
+
+        setNotificacion({
+          tipo: "info",
+          titulo: "Pedido sin saldo pendiente",
+          mensaje:
+            `${venta.numeroPedido} ya tiene registrado el total de sus pagos. Se actualizó el estado de la vista.`,
+        });
+
+        return;
+      }
+
+      setPagosVentaParaCobrar(
+        pagosPrevios,
+      );
       setVentaParaCobrar(venta);
     } catch (error: unknown) {
       setNotificacion({
@@ -1104,6 +1368,7 @@ function Ventas() {
       return;
     }
 
+    setPagosVentaParaCobrar([]);
     setVentaParaCobrar(null);
   }
 
@@ -1127,6 +1392,30 @@ function Ventas() {
           usuario,
         );
 
+      const ventaActualizada =
+        await obtenerVentaPorId(
+          ventaParaCobrar.id,
+        );
+
+      const montoPagadoAnterior =
+        pagosVentaParaCobrar.reduce(
+          (acumulado, pagoPrevio) =>
+            acumulado +
+            pagoPrevio.totalCobrado,
+          0,
+        );
+
+      const montoPagadoAcumulado =
+        montoPagadoAnterior +
+        pago.totalCobrado;
+
+      const saldoPendiente =
+        Math.max(
+          0,
+          ventaActualizada.total -
+            montoPagadoAcumulado,
+        );
+
       await auditarAccion(
         {
           modulo: "Caja",
@@ -1134,7 +1423,7 @@ function Ventas() {
           entidad: "Pago",
           entidadId: pago.id,
           descripcion:
-            `${usuario.nombreCompleto} cobró ${pago.numeroPedido} por ${formatearMoneda(pago.totalCobrado)} mediante ${pago.metodoPago}.`,
+            `${usuario.nombreCompleto} registró ${ventaActualizada.estadoCobro === "Cobrada" ? "el cobro final" : "un abono"} de ${pago.numeroPedido} por ${formatearMoneda(pago.totalCobrado)} mediante ${pago.metodoPago}.`,
           datosPosteriores: pago,
           nivel:
             pago.montoDescuento > 0
@@ -1148,14 +1437,21 @@ function Ventas() {
         tipo: "exito",
 
         titulo:
-          "Cobro registrado",
+          ventaActualizada.estadoCobro ===
+          "Cobrada"
+            ? "Cobro completado"
+            : "Abono registrado",
 
         mensaje:
-          pago.cambio > 0
-            ? `${pago.numeroPedido} fue cobrado. Cambio: ${formatearMoneda(pago.cambio)}.`
-            : `${pago.numeroPedido} fue cobrado correctamente.`,
+          ventaActualizada.estadoCobro ===
+          "Cobrada"
+            ? pago.cambio > 0
+              ? `${pago.numeroPedido} quedó completamente pagado. Cambio: ${formatearMoneda(pago.cambio)}.`
+              : `${pago.numeroPedido} quedó completamente pagado.`
+            : `${pago.numeroPedido} recibió un abono de ${formatearMoneda(pago.totalCobrado)}. Saldo pendiente: ${formatearMoneda(saldoPendiente)}.`,
       });
 
+      setPagosVentaParaCobrar([]);
       setVentaParaCobrar(null);
 
       await recargarVentas();
@@ -1177,7 +1473,7 @@ function Ventas() {
   function abrirAnulacion(
     venta: Venta,
   ) {
-    if (!puedeGestionar) {
+    if (!puedeAnular) {
       return;
     }
 
@@ -1227,7 +1523,7 @@ function Ventas() {
     if (
       !ventaParaAnular ||
       !usuario ||
-      !puedeGestionar
+      !puedeAnular
     ) {
       return;
     }
@@ -1325,6 +1621,10 @@ function Ventas() {
   function abrirCompartirEntrega(
     venta: Venta,
   ) {
+    if (!puedeCompartirEntrega) {
+      return;
+    }
+
     const cliente =
       venta.clienteId !== null
         ? clientes.find(
@@ -1352,6 +1652,7 @@ function Ventas() {
 
   async function copiarPedidoEntrega() {
     if (
+      !puedeCompartirEntrega ||
       !ventaParaCompartirEntrega ||
       !clienteParaCompartirEntrega
     ) {
@@ -1384,6 +1685,7 @@ function Ventas() {
 
   function abrirWhatsappPedidoEntrega() {
     if (
+      !puedeCompartirEntrega ||
       !ventaParaCompartirEntrega ||
       !clienteParaCompartirEntrega
     ) {
@@ -1400,18 +1702,36 @@ function Ventas() {
     );
   }
 
+  function abrirHistorial() {
+    if (!puedeVerHistorial) {
+      return;
+    }
+
+    setHistorialAbierto(true);
+  }
+
   async function abrirTicket(
     venta: Venta,
   ) {
     try {
-      const pago =
-        await obtenerPagoPorVentaId(
+      const pagos =
+        await listarPagosPorVentaId(
           venta.id,
         );
 
-      setPagoParaTicket(pago);
+      setPagoParaTicket(
+        pagos[pagos.length - 1] ?? null,
+      );
+      setMontoPagadoParaTicket(
+        pagos.reduce(
+          (acumulado, pago) =>
+            acumulado + pago.totalCobrado,
+          0,
+        ),
+      );
     } catch {
       setPagoParaTicket(null);
+      setMontoPagadoParaTicket(0);
     }
 
     setVentaParaTicket(venta);
@@ -1431,8 +1751,8 @@ function Ventas() {
         <div className="h-24 rounded-3xl bg-white" />
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.8fr)]">
-          <div className="h-[44rem] rounded-3xl bg-white" />
-          <div className="h-[44rem] rounded-3xl bg-white" />
+          <div className="h-176 rounded-3xl bg-white" />
+          <div className="h-176 rounded-3xl bg-white" />
         </div>
       </div>
     );
@@ -1491,16 +1811,18 @@ function Ventas() {
   }
 
   const tituloConfirmacion =
-    accionEstado?.nuevoEstado ===
-    "Listo"
-      ? "Marcar pedido como listo"
-      : "Marcar pedido como entregado";
+    accionEstado?.nuevoEstado === "En preparación"
+      ? "Iniciar preparación del pedido"
+      : accionEstado?.nuevoEstado === "Listo"
+        ? "Marcar pedido como listo"
+        : "Marcar pedido como entregado";
 
   const descripcionConfirmacion =
-    accionEstado?.nuevoEstado ===
-    "Listo"
-      ? `¿Confirmas que ${accionEstado.venta.numeroPedido} ya está listo para recoger?`
-      : `¿Confirmas que ${accionEstado?.venta.numeroPedido ?? "el pedido"} ya fue entregado al cliente?`;
+    accionEstado?.nuevoEstado === "En preparación"
+      ? `¿Confirmas que cocina comenzará a preparar ${accionEstado.venta.numeroPedido}?`
+      : accionEstado?.nuevoEstado === "Listo"
+        ? `¿Confirmas que ${accionEstado.venta.numeroPedido} ya está listo para recoger?`
+        : `¿Confirmas que ${accionEstado?.venta.numeroPedido ?? "el pedido"} ya fue entregado al cliente?`;
 
   const fechaActual =
     new Intl.DateTimeFormat(
@@ -1536,20 +1858,20 @@ function Ventas() {
         }
       />
 
-      {!puedeGestionar && (
+      {!puedeRegistrar && (
         <section className="rounded-2xl border border-blue-200 bg-slate-50 p-4">
           <p className="text-sm font-bold text-blue-700">
             Modo de consulta
           </p>
           <p className="mt-1 text-sm text-slate-600">
-            Tu rol permite consultar pedidos, pero no registrar ni modificar operaciones.
+            Tu rol puede consultar la operación, pero no registrar pedidos. Las demás acciones dependen de los permisos asignados.
           </p>
         </section>
       )}
 
       <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.8fr)]">
-        <div className="min-h-[48rem] overflow-visible rounded-3xl border border-slate-200 bg-white shadow-panel">
-          {puedeGestionar ? (
+        <div className="min-h-192 overflow-visible rounded-3xl border border-slate-200 bg-white shadow-panel">
+          {puedeRegistrar ? (
             <FormularioVenta
               key={claveFormulario}
               productos={productos}
@@ -1559,6 +1881,9 @@ function Ventas() {
                 procesandoOperacion
               }
               puedeCobrar={puedeCobrar}
+              puedeVerHistorial={
+                puedeVerHistorial
+              }
               cajaAbierta={cajaAbierta}
               alGuardar={guardarVenta}
               alLimpiar={() => {
@@ -1566,12 +1891,12 @@ function Ventas() {
                   (clave) => clave + 1,
                 );
               }}
-              alAbrirHistorial={() =>
-                setHistorialAbierto(true)
+              alAbrirHistorial={
+                abrirHistorial
               }
             />
           ) : (
-            <div className="flex min-h-[44rem] items-center justify-center p-8 text-center">
+            <div className="flex min-h-176 items-center justify-center p-8 text-center">
               <div>
                 <ClipboardList
                   size={36}
@@ -1580,16 +1905,16 @@ function Ventas() {
                 <p className="mt-4 font-black text-slate-800">
                   Registro no disponible
                 </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setHistorialAbierto(true)
-                  }
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  <History size={17} />
-                  Ver historial
-                </button>
+                {puedeVerHistorial && (
+                  <button
+                    type="button"
+                    onClick={abrirHistorial}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    <History size={17} />
+                    Ver historial
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1597,10 +1922,25 @@ function Ventas() {
 
         <PanelPreparacion
           ventas={ventas}
-          puedeGestionar={
-            puedeGestionar
+          puedePreparar={
+            puedePreparar
           }
           puedeCobrar={puedeCobrar}
+          puedeAnular={puedeAnular}
+          puedeCompartirEntrega={
+            puedeCompartirEntrega
+          }
+          puedeConfigurarFlujo={
+            puedeConfigurarFlujo
+          }
+          modoInicioPreparacion={
+            modoInicioPreparacion
+          }
+          cambiandoFlujo={cambiandoFlujo}
+          cantidadEnCola={pedidosEnCola}
+          alCambiarModoInicioPreparacion={(modo) =>
+            void cambiarModoPreparacion(modo)
+          }
           alCambiarEstado={
             solicitarCambioEstado
           }
@@ -1609,6 +1949,9 @@ function Ventas() {
             void solicitarCobro(
               venta,
             )
+          }
+          alVerTicket={(venta) =>
+            void abrirTicket(venta)
           }
           clientesConEntregaIds={
             clientesConEntregaIds
@@ -1622,7 +1965,24 @@ function Ventas() {
         />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section
+        className={`grid gap-3 sm:grid-cols-2 ${
+          modoInicioPreparacion === "En cola"
+            ? "xl:grid-cols-6"
+            : "xl:grid-cols-5"
+        }`}
+      >
+        {modoInicioPreparacion === "En cola" && (
+          <TarjetaMetrica
+            titulo="En cola"
+            valor={String(pedidosEnCola)}
+            descripcion="Esperando inicio de preparación."
+            icono={ClipboardList}
+            tono="azul"
+            variante="compacta"
+          />
+        )}
+
         <TarjetaMetrica
           titulo="En preparación"
           valor={String(
@@ -1676,7 +2036,10 @@ function Ventas() {
       </section>
 
       <Modal
-        abierto={historialAbierto}
+        abierto={
+          historialAbierto &&
+          puedeVerHistorial
+        }
         titulo="Historial de ventas"
         descripcion="Consulta el número, cliente, total y fecha de los pedidos registrados."
         ancho="grande"
@@ -1729,7 +2092,7 @@ function Ventas() {
                   </div>
                 </section>
 
-                <pre className="mt-4 max-h-[30rem] overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                <pre className="mt-4 max-h-120 overflow-auto whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                   {construirTextoEntregaPedido(
                     ventaParaCompartirEntrega,
                     clienteParaCompartirEntrega,
@@ -1792,6 +2155,7 @@ function Ventas() {
         alCerrar={() => {
           setVentaParaTicket(null);
           setPagoParaTicket(null);
+          setMontoPagadoParaTicket(0);
         }}
       >
         {ventaParaTicket && (
@@ -1806,11 +2170,15 @@ function Ventas() {
               className="
                 mx-auto w-full max-w-sm
                 rounded-2xl border
-                border-slate-300
-                bg-[#ffffff] p-6
-                text-[#0f172a]
-                shadow-panel
+                border-black p-6
+                text-black
+                shadow-none
               "
+              style={{
+                backgroundColor: "#ffffff",
+                color: "#000000",
+                colorScheme: "light",
+              }}
             >
               <div className="text-center">
                 <p
@@ -1827,7 +2195,7 @@ function Ventas() {
                     mt-1 text-[10px]
                     font-black uppercase
                     tracking-[0.35em]
-                    text-[#be123c]
+                    text-black
                   "
                 >
                   FAST FOOD
@@ -1846,7 +2214,7 @@ function Ventas() {
                 className="
                   mt-5 space-y-1
                   border-y border-dashed
-                  border-slate-300 py-4
+                  border-black py-4
                   text-xs
                 "
               >
@@ -1859,6 +2227,18 @@ function Ventas() {
                   <strong>Atendido por:</strong>{" "}
                   {ventaParaTicket.usuarioRegistroNombre}
                 </p>
+
+                <p>
+                  <strong>Canal:</strong>{" "}
+                  {ventaParaTicket.canalVenta}
+                </p>
+
+                {ventaParaTicket.canalVenta === "PedidosYa" && ventaParaTicket.referenciaPedidosYa && (
+                  <p>
+                    <strong>Referencia:</strong>{" "}
+                    {ventaParaTicket.referenciaPedidosYa}
+                  </p>
+                )}
 
                 <p>
                   <strong>Fecha:</strong>{" "}
@@ -1875,7 +2255,7 @@ function Ventas() {
                       key={detalle.productoId}
                       className="
                         border-b border-dashed
-                        border-slate-200 pb-3
+                        border-black pb-3
                       "
                     >
                       <div
@@ -1901,7 +2281,7 @@ function Ventas() {
                         <p
                           className="
                             mt-1 text-[11px]
-                            italic text-slate-500
+                            italic text-black
                           "
                         >
                           {detalle.observacion}
@@ -1916,15 +2296,15 @@ function Ventas() {
                 <div
                   className="
                     mt-4 rounded-xl border-2
-                    border-dashed border-amber-400
-                    bg-amber-50 p-3
+                    border-dashed border-black
+                    p-3
                   "
                 >
                   <p
                     className="
                       text-[10px] font-black
                       uppercase tracking-wide
-                      text-amber-800
+                      text-black
                     "
                   >
                     Observaciones generales para cocina
@@ -1935,7 +2315,7 @@ function Ventas() {
                       mt-1 whitespace-pre-wrap
                       text-xs font-bold
                       leading-relaxed
-                      text-slate-800
+                      text-black
                     "
                   >
                     {ventaParaTicket.observaciones}
@@ -1969,7 +2349,7 @@ function Ventas() {
                   className="
                     mt-3 flex justify-between
                     gap-3 border-t
-                    border-slate-300 pt-3
+                    border-black pt-3
                     text-lg font-black
                   "
                 >
@@ -1981,15 +2361,33 @@ function Ventas() {
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-1 border-t border-dashed border-slate-300 pt-3 text-slate-600">
+                <div className="mt-3 space-y-1 border-t border-dashed border-black pt-3 text-black">
                   <p>
-                    <strong>Pago:</strong>{" "}
-                    {pagoParaTicket?.metodoPago ??
-                      ventaParaTicket.estadoCobro}
+                    <strong>{ventaParaTicket.canalVenta === "PedidosYa" ? "Liquidación" : ventaParaTicket.estadoCobro === "Cobrada" ? "Pago" : "Último abono"}:</strong>{" "}
+                    {ventaParaTicket.canalVenta === "PedidosYa"
+                      ? ventaParaTicket.estadoCobro
+                      : pagoParaTicket?.metodoPago ?? ventaParaTicket.estadoCobro}
                   </p>
 
-                  {pagoParaTicket && (
+                  {ventaParaTicket.canalVenta === "Local" && pagoParaTicket && (
                     <>
+                      <p>
+                        Pagado acumulado: {formatearMoneda(
+                          montoPagadoParaTicket,
+                        )}
+                      </p>
+
+                      {ventaParaTicket.estadoCobro === "Pendiente de cobro" && (
+                        <p className="font-black text-black">
+                          Saldo pendiente: {formatearMoneda(
+                            Math.max(
+                              0,
+                              ventaParaTicket.total - montoPagadoParaTicket,
+                            ),
+                          )}
+                        </p>
+                      )}
+
                       {pagoParaTicket.montoQr > 0 && (
                         <p>
                           QR: {formatearMoneda(
@@ -2016,7 +2414,7 @@ function Ventas() {
                       )}
 
                       {pagoParaTicket.cambio > 0 && (
-                        <p className="font-black text-emerald-700">
+                        <p className="font-black text-black">
                           Cambio: {formatearMoneda(
                             pagoParaTicket.cambio,
                           )}
@@ -2031,7 +2429,7 @@ function Ventas() {
                 className="
                   mt-6 text-center
                   text-[11px]
-                  text-slate-500
+                  text-black
                 "
               >
                 Gracias por su compra.
@@ -2045,6 +2443,8 @@ function Ventas() {
                 rounded-2xl border
                 border-slate-200
                 bg-slate-50 p-5
+                dark:border-slate-700
+                dark:bg-slate-900
               "
             >
               <div>
@@ -2054,6 +2454,8 @@ function Ventas() {
                     items-center justify-center
                     rounded-2xl bg-roma-50
                     text-roma-700
+                    dark:bg-roma-950/40
+                    dark:text-roma-300
                   "
                 >
                   <ReceiptText size={24} />
@@ -2063,6 +2465,7 @@ function Ventas() {
                   className="
                     mt-4 text-lg font-black
                     text-slate-900
+                    dark:text-white
                   "
                 >
                   Copia del comprobante
@@ -2073,6 +2476,7 @@ function Ventas() {
                     mt-2 text-sm
                     leading-relaxed
                     text-slate-500
+                    dark:text-slate-400
                   "
                 >
                   Imprime el comprobante o utiliza la opción Guardar como PDF del navegador.
@@ -2086,6 +2490,7 @@ function Ventas() {
                     imprimirTicket(
                       ventaParaTicket,
                       pagoParaTicket,
+                      montoPagadoParaTicket,
                     )
                   }
                   className="
@@ -2109,6 +2514,7 @@ function Ventas() {
                     imprimirTicket(
                       ventaParaTicket,
                       pagoParaTicket,
+                      montoPagadoParaTicket,
                     )
                   }
                   className="
@@ -2121,6 +2527,10 @@ function Ventas() {
                     text-slate-700
                     transition-colors
                     hover:bg-slate-100
+                    dark:border-slate-600
+                    dark:bg-slate-800
+                    dark:text-slate-200
+                    dark:hover:bg-slate-700
                   "
                   title="En el cuadro de impresión selecciona Guardar como PDF"
                 >
@@ -2133,6 +2543,7 @@ function Ventas() {
                   onClick={() => {
                     setVentaParaTicket(null);
                     setPagoParaTicket(null);
+                    setMontoPagadoParaTicket(0);
                   }}
                   className="
                     h-11 w-full rounded-xl
@@ -2142,6 +2553,10 @@ function Ventas() {
                     text-slate-700
                     transition-colors
                     hover:bg-slate-100
+                    dark:border-slate-600
+                    dark:bg-slate-800
+                    dark:text-slate-200
+                    dark:hover:bg-slate-700
                   "
                 >
                   Cerrar
@@ -2162,7 +2577,7 @@ function Ventas() {
             ? `Cobrar ${ventaParaCobrar.numeroPedido}`
             : "Registrar cobro"
         }
-        descripcion="Ingresa el monto QR y el efectivo recibido. El método de pago se detectará automáticamente."
+        descripcion="Ingresa primero el efectivo recibido y, si corresponde, el monto QR. El método de pago se detectará automáticamente."
         ancho="grande"
         alCerrar={cerrarCobro}
       >
@@ -2171,6 +2586,9 @@ function Ventas() {
             <FormularioCobro
               venta={ventaParaCobrar}
               sesionCaja={cajaAbierta}
+              pagosPrevios={
+                pagosVentaParaCobrar
+              }
               cargando={
                 procesandoCobro
               }
@@ -2189,10 +2607,11 @@ function Ventas() {
           descripcionConfirmacion
         }
         textoConfirmar={
-          accionEstado?.nuevoEstado ===
-          "Listo"
-            ? "Sí, está listo"
-            : "Sí, fue entregado"
+          accionEstado?.nuevoEstado === "En preparación"
+            ? "Sí, iniciar preparación"
+            : accionEstado?.nuevoEstado === "Listo"
+              ? "Sí, está listo"
+              : "Sí, fue entregado"
         }
         variante="activar"
         cargando={

@@ -3,6 +3,10 @@ import type {
 } from "../tipos/auth";
 
 import type {
+  PermisoSistema,
+} from "../tipos/rol";
+
+import type {
   AbrirCajaDto,
   CerrarCajaDto,
   FiltroMovimientosCaja,
@@ -160,17 +164,17 @@ function obtenerSiguienteId(
   );
 }
 
-function exigirPermisoCaja(
+function exigirPermiso(
   usuario: UsuarioSesion,
+  permiso: PermisoSistema,
+  mensaje: string,
 ): void {
   if (
     !usuario.permisos.includes(
-      "CAJA_GESTIONAR",
+      permiso,
     )
   ) {
-    throw new Error(
-      "No tienes permiso para gestionar la caja.",
-    );
+    throw new Error(mensaje);
   }
 }
 
@@ -395,123 +399,128 @@ function calcularDescuento(
 }
 
 function calcularDistribucionPago(
-  metodoPago: MetodoPago,
-  totalCobrado: number,
+  saldoPendiente: number,
+  metodoPagoIngresado: MetodoPago,
   montoEfectivoIngresado: number,
+  montoQrIngresado: number,
   montoRecibidoIngresado: number,
   referenciaQrIngresada:
     string | null,
 ): {
+  totalAplicado: number;
+  metodoPago: MetodoPago;
   montoEfectivo: number;
   montoQr: number;
   montoRecibido: number;
   cambio: number;
   referenciaQr: string | null;
 } {
-  const referenciaQr =
-    normalizarTextoOpcional(
-      referenciaQrIngresada,
-      100,
-      "La referencia QR",
-    );
-
-  if (
-    metodoPago === "QR"
-  ) {
-    return {
-      montoEfectivo: 0,
-      montoQr: totalCobrado,
-      montoRecibido: 0,
-      cambio: 0,
-      referenciaQr,
-    };
-  }
-
-  if (
-    metodoPago === "Efectivo"
-  ) {
-    const montoRecibido =
-      validarMontoPositivo(
-        montoRecibidoIngresado,
-        "El monto recibido",
-      );
-
-    if (
-      montoRecibido <
-      totalCobrado
-    ) {
-      throw new Error(
-        "El monto recibido es menor al total por cobrar.",
-      );
-    }
-
-    return {
-      montoEfectivo:
-        totalCobrado,
-
-      montoQr: 0,
-
-      montoRecibido,
-
-      cambio:
-        redondearMoneda(
-          montoRecibido -
-            totalCobrado,
-        ),
-
-      referenciaQr: null,
-    };
-  }
-
   const montoEfectivo =
-    validarMontoPositivo(
+    validarMontoNoNegativo(
       montoEfectivoIngresado,
       "La parte en efectivo",
     );
 
-  if (
-    montoEfectivo >=
-    totalCobrado
-  ) {
+  const montoQr =
+    validarMontoNoNegativo(
+      montoQrIngresado,
+      "El monto QR",
+    );
+
+  const totalAplicado =
+    redondearMoneda(
+      montoEfectivo + montoQr,
+    );
+
+  if (totalAplicado <= 0) {
     throw new Error(
-      "En un pago mixto, la parte en efectivo debe ser menor al total.",
+      "Ingresa un monto mayor a cero para registrar el abono.",
     );
   }
 
-  const montoQr =
-    redondearMoneda(
-      totalCobrado -
-        montoEfectivo,
+  if (
+    totalAplicado >
+    redondearMoneda(saldoPendiente)
+  ) {
+    throw new Error(
+      "El abono no puede superar el saldo pendiente de la venta.",
     );
+  }
+
+  const metodoPago: MetodoPago =
+    montoEfectivo > 0 && montoQr > 0
+      ? "Mixto"
+      : montoQr > 0
+        ? "QR"
+        : "Efectivo";
+
+  if (metodoPagoIngresado !== metodoPago) {
+    throw new Error(
+      "La distribución del pago no coincide con el método detectado.",
+    );
+  }
 
   const montoRecibido =
-    validarMontoPositivo(
-      montoRecibidoIngresado,
-      "El monto recibido",
-    );
+    montoEfectivo > 0
+      ? validarMontoPositivo(
+          montoRecibidoIngresado,
+          "El monto recibido",
+        )
+      : 0;
 
   if (
-    montoRecibido <
-    montoEfectivo
+    montoEfectivo > 0 &&
+    montoRecibido < montoEfectivo
   ) {
     throw new Error(
-      "El monto recibido es menor a la parte que se pagará en efectivo.",
+      "El monto recibido es menor al efectivo que se aplicará al abono.",
     );
   }
 
+  const referenciaQr =
+    montoQr > 0
+      ? normalizarTextoOpcional(
+          referenciaQrIngresada,
+          100,
+          "La referencia QR",
+        )
+      : null;
+
   return {
+    totalAplicado,
+    metodoPago,
     montoEfectivo,
     montoQr,
     montoRecibido,
-
     cambio:
       redondearMoneda(
-        montoRecibido -
-          montoEfectivo,
+        Math.max(
+          0,
+          montoRecibido - montoEfectivo,
+        ),
       ),
-
     referenciaQr,
   };
+}
+
+function obtenerMetodoPagoAcumulado(
+  pagos: PagoVenta[],
+  metodoNuevo: MetodoPago,
+): MetodoPago {
+  const metodos = new Set<MetodoPago>(
+    pagos.map((pago) => pago.metodoPago),
+  );
+
+  metodos.add(metodoNuevo);
+
+  if (
+    metodos.size === 1 &&
+    !metodos.has("Mixto")
+  ) {
+    return Array.from(metodos)[0];
+  }
+
+  return "Mixto";
 }
 
 /**
@@ -643,15 +652,46 @@ export async function obtenerPagoPorVentaId(
 
   const pago =
     obtenerPagosPersistidos()
-      .find(
+      .filter(
         (pagoActual) =>
           pagoActual.ventaId ===
           ventaId,
-      );
+      )
+      .sort(
+        (pagoA, pagoB) =>
+          new Date(
+            pagoB.fechaHoraCobro,
+          ).getTime() -
+          new Date(
+            pagoA.fechaHoraCobro,
+          ).getTime(),
+      )[0];
 
   return pago
     ? clonarPago(pago)
     : null;
+}
+
+export async function listarPagosPorVentaId(
+  ventaId: number,
+): Promise<PagoVenta[]> {
+  await esperar(200);
+
+  return obtenerPagosPersistidos()
+    .filter(
+      (pago) =>
+        pago.ventaId === ventaId,
+    )
+    .sort(
+      (pagoA, pagoB) =>
+        new Date(
+          pagoA.fechaHoraCobro,
+        ).getTime() -
+        new Date(
+          pagoB.fechaHoraCobro,
+        ).getTime(),
+    )
+    .map(clonarPago);
 }
 
 export async function calcularResumenSesionCaja(
@@ -787,7 +827,11 @@ export async function abrirCaja(
 ): Promise<SesionCaja> {
   await esperar(500);
 
-  exigirPermisoCaja(usuario);
+  exigirPermiso(
+    usuario,
+    "CAJA_ABRIR",
+    "No tienes permiso para abrir una caja.",
+  );
 
   const cajaAbiertaUsuario =
     obtenerCajaAbiertaUsuarioPersistida(
@@ -869,7 +913,15 @@ export async function registrarMovimientoManual(
 ): Promise<MovimientoCaja> {
   await esperar(450);
 
-  exigirPermisoCaja(usuario);
+  exigirPermiso(
+    usuario,
+    datos.tipo === "Ingreso"
+      ? "CAJA_INGRESOS"
+      : "CAJA_EGRESOS",
+    datos.tipo === "Ingreso"
+      ? "No tienes permiso para registrar ingresos de caja."
+      : "No tienes permiso para registrar egresos de caja.",
+  );
 
   const caja =
     exigirCajaAbiertaUsuario(
@@ -962,7 +1014,11 @@ export async function registrarPagoVenta(
 ): Promise<PagoVenta> {
   await esperar(550);
 
-  exigirPermisoCaja(usuario);
+  exigirPermiso(
+    usuario,
+    "VENTAS_COBRAR",
+    "No tienes permiso para registrar cobros de ventas.",
+  );
 
   const caja =
     exigirCajaAbiertaUsuario(
@@ -973,6 +1029,12 @@ export async function registrarPagoVenta(
     await obtenerVentaPorId(
       datos.ventaId,
     );
+
+  if (venta.canalVenta === "PedidosYa") {
+    throw new Error(
+      "Los pedidos de PedidosYa no se cobran en la caja del local. Se controlan mediante liquidaciones administrativas.",
+    );
+  }
 
   if (
     venta.estadoCobro ===
@@ -994,25 +1056,86 @@ export async function registrarPagoVenta(
     );
   }
 
-  const descuento =
-    calcularDescuento(
-      venta.subtotal,
-      datos.tipoDescuento,
-      datos.valorDescuento,
-      datos.motivoDescuento,
+  const pagos =
+    obtenerPagosPersistidos();
+
+  const pagosVenta = pagos.filter(
+    (pago) => pago.ventaId === venta.id,
+  );
+
+  const montoPagadoPrevio =
+    redondearMoneda(
+      pagosVenta.reduce(
+        (acumulado, pago) =>
+          acumulado + pago.totalCobrado,
+        0,
+      ),
     );
+
+  const tienePagosPrevios =
+    pagosVenta.length > 0;
+
+  const descuento = tienePagosPrevios
+    ? {
+        valorDescuento:
+          venta.valorDescuento,
+        montoDescuento:
+          venta.montoDescuento,
+        motivoDescuento: null,
+        totalCobrado:
+          venta.total,
+      }
+    : calcularDescuento(
+        venta.subtotal,
+        datos.tipoDescuento,
+        datos.valorDescuento,
+        datos.motivoDescuento,
+      );
+
+  const totalVenta =
+    redondearMoneda(
+      descuento.totalCobrado,
+    );
+
+  const saldoAnterior =
+    redondearMoneda(
+      Math.max(
+        0,
+        totalVenta - montoPagadoPrevio,
+      ),
+    );
+
+  if (saldoAnterior <= 0) {
+    throw new Error(
+      "La venta ya no tiene saldo pendiente de cobro.",
+    );
+  }
 
   const distribucion =
     calcularDistribucionPago(
+      saldoAnterior,
       datos.metodoPago,
-      descuento.totalCobrado,
       datos.montoEfectivo,
+      datos.montoQr,
       datos.montoRecibido,
       datos.referenciaQr,
     );
 
-  const pagos =
-    obtenerPagosPersistidos();
+  const montoPagadoAcumulado =
+    redondearMoneda(
+      montoPagadoPrevio +
+        distribucion.totalAplicado,
+    );
+
+  const pagoCompleto =
+    montoPagadoAcumulado >=
+    totalVenta;
+
+  const metodoPagoAcumulado =
+    obtenerMetodoPagoAcumulado(
+      pagosVenta,
+      distribucion.metodoPago,
+    );
 
   const movimientos =
     obtenerMovimientosPersistidos();
@@ -1045,22 +1168,30 @@ export async function registrarPagoVenta(
       venta.subtotal,
 
     tipoDescuento:
-      datos.tipoDescuento,
+      tienePagosPrevios
+        ? "Ninguno"
+        : datos.tipoDescuento,
 
     valorDescuento:
-      descuento.valorDescuento,
+      tienePagosPrevios
+        ? 0
+        : descuento.valorDescuento,
 
     montoDescuento:
-      descuento.montoDescuento,
+      tienePagosPrevios
+        ? 0
+        : descuento.montoDescuento,
 
     motivoDescuento:
-      descuento.motivoDescuento,
+      tienePagosPrevios
+        ? null
+        : descuento.motivoDescuento,
 
     totalCobrado:
-      descuento.totalCobrado,
+      distribucion.totalAplicado,
 
     metodoPago:
-      datos.metodoPago,
+      distribucion.metodoPago,
 
     montoEfectivo:
       distribucion.montoEfectivo,
@@ -1096,10 +1227,14 @@ export async function registrarPagoVenta(
     tipo: "Venta",
 
     concepto:
-      `Cobro de ${venta.numeroPedido}`,
+      pagoCompleto && montoPagadoPrevio > 0
+        ? `Saldo de ${venta.numeroPedido}`
+        : pagoCompleto
+          ? `Cobro de ${venta.numeroPedido}`
+          : `Abono de ${venta.numeroPedido}`,
 
     monto:
-      descuento.totalCobrado,
+      distribucion.totalAplicado,
 
     montoEfectivo:
       distribucion.montoEfectivo,
@@ -1108,7 +1243,7 @@ export async function registrarPagoVenta(
       distribucion.montoQr,
 
     metodoPago:
-      datos.metodoPago,
+      distribucion.metodoPago,
 
     ventaId:
       venta.id,
@@ -1132,19 +1267,25 @@ export async function registrarPagoVenta(
       pagoId,
 
       tipoDescuento:
-        datos.tipoDescuento,
+        tienePagosPrevios
+          ? venta.tipoDescuento
+          : datos.tipoDescuento,
 
       valorDescuento:
-        descuento.valorDescuento,
+        tienePagosPrevios
+          ? venta.valorDescuento
+          : descuento.valorDescuento,
 
       montoDescuento:
-        descuento.montoDescuento,
+        tienePagosPrevios
+          ? venta.montoDescuento
+          : descuento.montoDescuento,
 
-      totalCobrado:
-        descuento.totalCobrado,
+      totalVenta,
+      pagoCompleto,
 
       metodoPago:
-        datos.metodoPago,
+        metodoPagoAcumulado,
 
       fechaHoraCobro,
     },
@@ -1177,7 +1318,11 @@ export async function cerrarCaja(
 ): Promise<SesionCaja> {
   await esperar(600);
 
-  exigirPermisoCaja(usuario);
+  exigirPermiso(
+    usuario,
+    "CAJA_CERRAR",
+    "No tienes permiso para cerrar la caja.",
+  );
 
   const caja =
     exigirCajaAbiertaUsuario(

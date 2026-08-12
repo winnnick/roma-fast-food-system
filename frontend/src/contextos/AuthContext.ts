@@ -8,6 +8,24 @@ import type {
   UsuarioSesion,
 } from "../tipos/auth";
 
+export interface OpcionesCerrarSesion {
+  permitirCajaAbierta?: boolean;
+}
+
+export class CajaAbiertaAlCerrarSesionError extends Error {
+  cajaId: number;
+
+  constructor(cajaId: number) {
+    super(
+      `La caja N.º ${cajaId} permanece abierta.`,
+    );
+
+    this.name =
+      "CajaAbiertaAlCerrarSesionError";
+    this.cajaId = cajaId;
+  }
+}
+
 export interface AuthContextType {
   sesion: SesionUsuario | null;
   usuario: UsuarioSesion | null;
@@ -15,7 +33,9 @@ export interface AuthContextType {
   iniciarSesion: (
     sesion: SesionUsuario,
   ) => void;
-  cerrarSesion: () => Promise<void>;
+  cerrarSesion: (
+    opciones?: OpcionesCerrarSesion,
+  ) => Promise<void>;
 }
 
 export const AuthContext =

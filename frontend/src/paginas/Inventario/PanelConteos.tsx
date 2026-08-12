@@ -34,7 +34,7 @@ import Modal from "../../shared/ui/Modal";
 import FormularioConteoFisico from "./FormularioConteoFisico";
 
 interface PanelConteosProps {
-  puedeGestionar: boolean;
+  puedeRegistrar: boolean;
   alNotificar: (notificacion: DatosNotificacion) => void;
   alCambio: () => Promise<void>;
 }
@@ -72,7 +72,7 @@ function cantidadConteo(
 }
 
 function PanelConteos({
-  puedeGestionar,
+  puedeRegistrar,
   alNotificar,
   alCambio,
 }: PanelConteosProps) {
@@ -131,7 +131,7 @@ function PanelConteos({
   );
 
   async function guardar(datos: RegistrarConteoFisicoDto) {
-    if (!usuario || !puedeGestionar) return;
+    if (!usuario || !puedeRegistrar) return;
 
     try {
       setProcesando(true);
@@ -176,7 +176,7 @@ function PanelConteos({
   }
 
   return (
-    <div className="min-h-[34rem]">
+    <div className="min-h-136">
       <header className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-700 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white">
@@ -202,7 +202,7 @@ function PanelConteos({
             <RefreshCw size={17} />
           </button>
 
-          {puedeGestionar && (
+          {puedeRegistrar && (
             <button
               type="button"
               onClick={() => setModalAbierto(true)}
@@ -239,7 +239,7 @@ function PanelConteos({
         </div>
       ) : (
         <>
-          <div className="max-h-[33rem] space-y-2.5 overflow-y-auto p-3">
+          <div className="max-h-132 space-y-2.5 overflow-y-auto p-3">
             {conteosPagina.map((conteo) => {
               const diferencias = conteo.detalles.filter(
                 (detalle) =>

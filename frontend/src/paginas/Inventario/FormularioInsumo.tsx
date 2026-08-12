@@ -38,6 +38,7 @@ export interface DatosFormularioInsumo {
 interface Props {
   insumo: InsumoInventario | null;
   cargando: boolean;
+  puedeRegistrarStockInicial: boolean;
   alGuardar: (datos: DatosFormularioInsumo) => Promise<void>;
   alCancelar: () => void;
 }
@@ -91,6 +92,7 @@ function estadoInicial(insumo: InsumoInventario | null): EstadoFormulario {
 function FormularioInsumo({
   insumo,
   cargando,
+  puedeRegistrarStockInicial,
   alGuardar,
   alCancelar,
 }: Props) {
@@ -323,7 +325,7 @@ function FormularioInsumo({
                   id="stock-inicial"
                   type="number"
                   value={formulario.stockInicialCompra}
-                  disabled={cargando}
+                  disabled={cargando || !puedeRegistrarStockInicial}
                   min="0"
                   step={1 / Math.max(1, factor || 1)}
                   inputMode="decimal"
@@ -331,7 +333,9 @@ function FormularioInsumo({
                   className={claseInput}
                 />
                 <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  Stock base resultante: {Math.round(stockInicialBase).toLocaleString("es-BO")} {formulario.unidadBase}
+                  {puedeRegistrarStockInicial
+                    ? `Stock base resultante: ${Math.round(stockInicialBase).toLocaleString("es-BO")} ${formulario.unidadBase}`
+                    : "Tu rol puede crear el insumo, pero el stock inicial debe registrarlo un usuario con permiso de entradas."}
                 </p>
               </div>
             )}

@@ -6,9 +6,10 @@ import {
   Edit3,
   ImageOff,
   LoaderCircle,
+  PackageCheck,
   PackageOpen,
   PackagePlus,
-  Power,
+  PowerOff,
   RotateCcw,
   Search,
   Sparkles,
@@ -44,12 +45,14 @@ import {
 import {
   actualizarProductoConInventario,
   crearProductoConInventario,
+  guardarNuevaVersionRecetaInventario,
   listarEstadosInventarioProductos,
   listarInsumosInventario,
   obtenerRecetaVigenteProducto,
 } from "../../servicios/inventarioServicio";
 
 import type {
+  GuardarRecetaProductoDto,
   InsumoInventario,
   RecetaProducto,
 } from "../../tipos/inventario";
@@ -75,6 +78,7 @@ import FormularioProducto, {
 } from "./FormularioProducto";
 
 import GestionCategorias from "./GestionCategorias";
+import FormularioReceta from "../Inventario/FormularioReceta";
 
 const PRODUCTOS_POR_PAGINA = 8;
 
@@ -83,7 +87,11 @@ type FiltroInventario =
   | EstadoConfiguracionInventarioProducto;
 
 interface GestionProductosProps {
-  puedeGestionar: boolean;
+  puedeCrear: boolean;
+  puedeEditar: boolean;
+  puedeCambiarEstado: boolean;
+  puedeGestionarRecetas: boolean;
+  puedeGestionarCategorias: boolean;
 }
 
 interface AccionEstadoProducto {
@@ -127,7 +135,11 @@ function claseInventario(
 }
 
 function GestionProductos({
-  puedeGestionar,
+  puedeCrear,
+  puedeEditar,
+  puedeCambiarEstado,
+  puedeGestionarRecetas,
+  puedeGestionarCategorias,
 }: GestionProductosProps) {
   const { usuario } = useAuth();
 
@@ -186,10 +198,16 @@ function GestionProductos({
       null,
     );
 
-  const [guardando, setGuardando] =
+  const [productoRecetaEdicion, setProductoRecetaEdicion] =
+    useState<ProductoMenu | null>(null);
+
+  const [guardandoReceta, setGuardandoReceta] =
     useState(false);
 
-  const [cargandoEdicion, setCargandoEdicion] =
+  const [cargandoRecetaProductoId, setCargandoRecetaProductoId] =
+    useState<number | null>(null);
+
+  const [guardando, setGuardando] =
     useState(false);
 
   const [accionEstado, setAccionEstado] =
@@ -434,7 +452,7 @@ function GestionProductos({
   }
 
   function abrirNuevoProducto() {
-    if (!puedeGestionar) {
+    if (!puedeCrear) {
       return;
     }
 
@@ -443,37 +461,43 @@ function GestionProductos({
     setModalProducto(true);
   }
 
-  async function abrirEdicionProducto(
+  function abrirEdicionProducto(
     producto: ProductoMenu,
   ) {
-    if (!puedeGestionar) {
+    if (!puedeEditar) {
+      return;
+    }
+
+    setProductoEdicion(producto);
+    setRecetaEdicion(null);
+    setModalProducto(true);
+  }
+
+  async function abrirEdicionReceta(
+    producto: ProductoMenu,
+  ) {
+    if (!puedeGestionarRecetas) {
       return;
     }
 
     try {
-      setCargandoEdicion(true);
+      setCargandoRecetaProductoId(producto.id);
 
       const receta =
-        producto.controlInventario ===
-        "Con receta"
-          ? await obtenerRecetaVigenteProducto(
-              producto.id,
-            )
-          : null;
+        await obtenerRecetaVigenteProducto(
+          producto.id,
+        );
 
-      setProductoEdicion(producto);
+      setProductoRecetaEdicion(producto);
       setRecetaEdicion(receta);
-      setModalProducto(true);
     } catch (error: unknown) {
       setNotificacion({
         tipo: "error",
-        titulo:
-          "No se pudo abrir el producto",
-        mensaje:
-          obtenerMensajeError(error),
+        titulo: "No se pudo abrir la receta",
+        mensaje: obtenerMensajeError(error),
       });
     } finally {
-      setCargandoEdicion(false);
+      setCargandoRecetaProductoId(null);
     }
   }
 
@@ -492,8 +516,10 @@ function GestionProductos({
       DatosFormularioProductoIntegrado,
   ) {
     if (
-      !puedeGestionar ||
-      !usuario
+      !usuario ||
+      (productoEdicion
+        ? !puedeEditar
+        : !puedeCrear)
     ) {
       return;
     }
@@ -513,6 +539,10 @@ function GestionProductos({
               categoriaId:
                 datos.categoriaId,
               precio: datos.precio,
+              disponiblePedidosYa:
+                datos.disponiblePedidosYa,
+              precioPedidosYa:
+                datos.precioPedidosYa,
               disponible:
                 productoEdicion.estado ===
                 "Activo",
@@ -521,6 +551,8 @@ function GestionProductos({
                 "Activo"
                   ? datos.destacado
                   : false,
+              modoPreparacion:
+                datos.modoPreparacion,
               controlInventario:
                 datos.controlInventario,
               imagenUrl: datos.imagenUrl,
@@ -532,24 +564,21 @@ function GestionProductos({
 
         await auditarAccion({
           modulo: "Productos",
-          accion: "Actualizar producto y receta",
+          accion: "Actualizar producto",
           entidad: "Producto",
           entidadId:
             resultado.producto.id,
           descripcion:
-            `Se actualizó ${resultado.producto.nombre} y su configuración de inventario.`,
-          datosAnteriores: {
-            producto: productoEdicion,
-            receta: recetaEdicion,
-          },
-          datosPosteriores: resultado,
+            `Se actualizó la información comercial de ${resultado.producto.nombre}.`,
+          datosAnteriores: productoEdicion,
+          datosPosteriores: resultado.producto,
         });
 
         setNotificacion({
           tipo: "exito",
           titulo: "Producto actualizado",
           mensaje:
-            "La información comercial y el control de inventario fueron guardados.",
+            "La información comercial del producto fue guardada.",
         });
       } else {
         const resultado =
@@ -562,8 +591,14 @@ function GestionProductos({
               categoriaId:
                 datos.categoriaId,
               precio: datos.precio,
+              disponiblePedidosYa:
+                datos.disponiblePedidosYa,
+              precioPedidosYa:
+                datos.precioPedidosYa,
               disponible: true,
               destacado: datos.destacado,
+              modoPreparacion:
+                datos.modoPreparacion,
               controlInventario:
                 datos.controlInventario,
               imagenUrl: datos.imagenUrl,
@@ -611,11 +646,66 @@ function GestionProductos({
     }
   }
 
+  async function guardarRecetaProducto(
+    datos: GuardarRecetaProductoDto,
+  ) {
+    if (
+      !usuario ||
+      !puedeGestionarRecetas ||
+      !productoRecetaEdicion
+    ) {
+      return;
+    }
+
+    try {
+      setGuardandoReceta(true);
+
+      const receta =
+        await guardarNuevaVersionRecetaInventario(
+          datos,
+          usuario,
+        );
+
+      await auditarAccion(
+        {
+          modulo: "Recetas",
+          accion: "Crear versión de receta",
+          entidad: "Receta",
+          entidadId: receta.id,
+          descripcion:
+            `${usuario.nombreCompleto} creó la versión ${receta.version} de la receta de ${receta.productoNombre}.`,
+          datosAnteriores: recetaEdicion,
+          datosPosteriores: receta,
+        },
+        usuario,
+      );
+
+      setNotificacion({
+        tipo: "exito",
+        titulo: "Receta actualizada",
+        mensaje:
+          `${receta.productoNombre} ahora utiliza la versión ${receta.version}.`,
+      });
+
+      setProductoRecetaEdicion(null);
+      setRecetaEdicion(null);
+      await recargarDatos();
+    } catch (error: unknown) {
+      setNotificacion({
+        tipo: "error",
+        titulo: "No se pudo guardar la receta",
+        mensaje: obtenerMensajeError(error),
+      });
+    } finally {
+      setGuardandoReceta(false);
+    }
+  }
+
   async function cambiarDestacado(
     producto: ProductoMenu,
   ) {
     if (
-      !puedeGestionar ||
+      !puedeEditar ||
       producto.estado === "Inactivo"
     ) {
       return;
@@ -672,7 +762,7 @@ function GestionProductos({
   async function confirmarCambioEstado() {
     if (
       !accionEstado ||
-      !puedeGestionar
+      !puedeCambiarEstado
     ) {
       return;
     }
@@ -776,32 +866,36 @@ function GestionProductos({
                 Productos del menú
               </h2>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Información comercial y receta en una sola gestión.
+                Información comercial del menú y estado de sus recetas.
               </p>
             </div>
           </div>
 
-          {puedeGestionar && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() =>
-                  setModalCategorias(true)
-                }
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                <Tags size={18} />
-                Gestionar categorías
-              </button>
+          {(puedeGestionarCategorias || puedeCrear) && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {puedeGestionarCategorias && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModalCategorias(true)
+                  }
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Tags size={18} />
+                  Gestionar categorías
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={abrirNuevoProducto}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-red-700"
-              >
-                <PackagePlus size={18} />
-                Nuevo producto
-              </button>
+              {puedeCrear && (
+                <button
+                  type="button"
+                  onClick={abrirNuevoProducto}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white shadow-sm transition-colors hover:bg-red-700"
+                >
+                  <PackagePlus size={18} />
+                  Nuevo producto
+                </button>
+              )}
             </div>
           )}
         </header>
@@ -911,12 +1005,12 @@ function GestionProductos({
           </button>
         </div>
 
-        <div className="hidden grid-cols-[minmax(270px,1.55fr)_minmax(120px,.7fr)_110px_minmax(170px,.9fr)_100px_140px] gap-4 border-b border-slate-200 bg-white px-5 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 xl:grid">
+        <div className="hidden grid-cols-[minmax(250px,1.45fr)_minmax(120px,.68fr)_minmax(125px,.62fr)_minmax(145px,.72fr)_minmax(170px,.9fr)_220px] gap-4 border-b border-slate-200 bg-white px-5 py-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 xl:grid">
           <span>Producto</span>
           <span>Categoría</span>
-          <span>Precio</span>
+          <span>Precio en local</span>
+          <span>Precio PedidosYa</span>
           <span>Inventario</span>
-          <span>Estado</span>
           <span className="text-right">
             Acciones
           </span>
@@ -976,7 +1070,7 @@ function GestionProductos({
             )}
           </div>
         ) : (
-          <div className="min-h-[34rem] divide-y divide-slate-200 dark:divide-slate-800">
+          <div className="min-h-136 divide-y divide-slate-200 dark:divide-slate-800">
             {productosPagina.map((producto) => {
               const categoria =
                 mapaCategorias.get(
@@ -999,7 +1093,7 @@ function GestionProductos({
               return (
                 <article
                   key={producto.id}
-                  className="grid gap-4 px-5 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 xl:grid-cols-[minmax(270px,1.55fr)_minmax(120px,.7fr)_110px_minmax(170px,.9fr)_100px_140px] xl:items-center"
+                  className="grid gap-4 px-5 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 xl:grid-cols-[minmax(250px,1.45fr)_minmax(120px,.68fr)_minmax(125px,.62fr)_minmax(145px,.72fr)_minmax(170px,.9fr)_220px] xl:items-center xl:gap-4"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
@@ -1031,6 +1125,16 @@ function GestionProductos({
                               fill="currentColor"
                             />
                             Destacado
+                          </span>
+                        )}
+
+                        {producto.modoPreparacion === "Entrega directa" && (
+                          <span
+                            title="Si se vende sin productos que requieran preparación, el pedido podrá entregarse directamente."
+                            className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700 dark:border-indigo-900/70 dark:bg-indigo-950/40 dark:text-indigo-300"
+                          >
+                            <PackageCheck size={10} />
+                            Entrega directa
                           </span>
                         )}
                       </div>
@@ -1065,21 +1169,29 @@ function GestionProductos({
                   </div>
 
                   <div>
-                    <button
-                      type="button"
-                      disabled={!puedeGestionar}
-                      onClick={() =>
-                        void abrirEdicionProducto(
-                          producto,
-                        )
-                      }
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black transition-colors ${claseInventario(
+                    {producto.disponiblePedidosYa &&
+                    producto.precioPedidosYa !== null ? (
+                      <div className="flex items-center gap-2">
+                        <CircleDollarSign
+                          size={17}
+                          className="text-fuchsia-600 dark:text-fuchsia-400"
+                        />
+                        <span className="font-black text-slate-900 dark:text-white">
+                          {formatearPrecio(producto.precioPedidosYa)}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                        No disponible
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black ${claseInventario(
                         estadoInventario,
-                      )} ${
-                        puedeGestionar
-                          ? "hover:brightness-95"
-                          : "cursor-default"
-                      }`}
+                      )}`}
                     >
                       {estadoInventario ===
                       "Receta configurada" ? (
@@ -1091,47 +1203,62 @@ function GestionProductos({
                         <PackageOpen size={14} />
                       )}
                       {estadoInventario}
-                    </button>
-                  </div>
-
-                  <div>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${
-                        producto.estado ===
-                        "Activo"
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                          : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                      }`}
-                    >
-                      {producto.estado}
                     </span>
                   </div>
 
                   <div className="flex justify-end gap-2">
-                    {puedeGestionar && (
+                    {(puedeEditar || puedeGestionarRecetas || puedeCambiarEstado) && (
                       <>
+                        {puedeEditar && (
                         <button
                           type="button"
-                          title="Editar producto y receta"
+                          title="Editar información del producto"
                           aria-label={`Editar ${producto.nombre}`}
-                          disabled={cargandoEdicion}
                           onClick={() =>
-                            void abrirEdicionProducto(
+                            abrirEdicionProducto(
                               producto,
                             )
                           }
                           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50"
                         >
-                          {cargandoEdicion ? (
-                            <LoaderCircle
-                              size={17}
-                              className="animate-spin"
-                            />
-                          ) : (
-                            <Edit3 size={17} />
-                          )}
+                          <Edit3 size={17} />
                         </button>
+                        )}
 
+                        {puedeGestionarRecetas && (
+                          <button
+                            type="button"
+                            title={
+                              estadoInventario === "Receta configurada"
+                                ? "Editar receta"
+                                : "Configurar receta"
+                            }
+                            aria-label={`${
+                              estadoInventario === "Receta configurada"
+                                ? "Editar receta de"
+                                : "Configurar receta para"
+                            } ${producto.nombre}`}
+                            disabled={
+                              cargandoRecetaProductoId === producto.id ||
+                              producto.estado === "Inactivo"
+                            }
+                            onClick={() =>
+                              void abrirEdicionReceta(producto)
+                            }
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+                          >
+                            {cargandoRecetaProductoId === producto.id ? (
+                              <LoaderCircle
+                                size={17}
+                                className="animate-spin"
+                              />
+                            ) : (
+                              <ChefHat size={17} />
+                            )}
+                          </button>
+                        )}
+
+                        {puedeEditar && (
                         <button
                           type="button"
                           aria-label={
@@ -1165,7 +1292,9 @@ function GestionProductos({
                             <Sparkles size={17} />
                           )}
                         </button>
+                        )}
 
+                        {puedeCambiarEstado && (
                         <button
                           type="button"
                           aria-label={
@@ -1190,19 +1319,18 @@ function GestionProductos({
                             })
                           }
                           className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
-                            producto.estado ===
-                            "Activo"
-                              ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/50"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50"
+                            producto.estado === "Activo"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                              : "border-red-200 bg-red-50 text-red-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300 dark:hover:border-emerald-900/60 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300"
                           }`}
                         >
-                          {producto.estado ===
-                          "Activo" ? (
-                            <Power size={17} />
-                          ) : (
+                          {producto.estado === "Activo" ? (
                             <CirclePower size={17} />
+                          ) : (
+                            <PowerOff size={17} />
                           )}
                         </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1267,8 +1395,8 @@ function GestionProductos({
         }
         descripcion={
           productoEdicion
-            ? "Actualiza la información comercial y su receta sin salir de esta pantalla."
-            : "Registra la información comercial y configura el consumo de inventario en una sola operación."
+            ? "Actualiza los datos comerciales del producto. La receta se administra por separado con la misma herramienta de Inventario."
+            : "Registra la información comercial y configura la receta inicial del producto."
         }
         ancho="grande"
         alCerrar={cerrarProducto}
@@ -1286,14 +1414,59 @@ function GestionProductos({
           cargando={guardando}
           alGuardar={guardarProducto}
           alCancelar={cerrarProducto}
+          puedeGestionarCategorias={
+            puedeGestionarCategorias
+          }
           alGestionarCategorias={() =>
             setModalCategorias(true)
+          }
+          soloInformacionComercial={
+            productoEdicion !== null
           }
         />
       </Modal>
 
       <Modal
-        abierto={modalCategorias}
+        abierto={productoRecetaEdicion !== null}
+        titulo={
+          productoRecetaEdicion
+            ? `Receta de ${productoRecetaEdicion.nombre}`
+            : "Configurar receta"
+        }
+        descripcion={
+          recetaEdicion
+            ? `La versión ${recetaEdicion.version} seguirá asociada a las ventas históricas. La nueva versión se aplicará solamente a ventas futuras.`
+            : "Define los ingredientes y cantidades que se descontarán en las ventas futuras de este producto."
+        }
+        ancho="grande"
+        alCerrar={() => {
+          if (!guardandoReceta) {
+            setProductoRecetaEdicion(null);
+            setRecetaEdicion(null);
+          }
+        }}
+      >
+        {productoRecetaEdicion && (
+          <FormularioReceta
+            key={`${productoRecetaEdicion.id}-${recetaEdicion?.version ?? 0}`}
+            producto={productoRecetaEdicion}
+            recetaVigente={recetaEdicion}
+            insumos={insumos}
+            cargando={guardandoReceta}
+            alGuardar={guardarRecetaProducto}
+            alCancelar={() => {
+              setProductoRecetaEdicion(null);
+              setRecetaEdicion(null);
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        abierto={
+          modalCategorias &&
+          puedeGestionarCategorias
+        }
         titulo="Gestionar categorías"
         descripcion="Crea, edita o cambia el estado de las categorías sin abandonar el catálogo de productos."
         ancho="grande"
@@ -1302,7 +1475,9 @@ function GestionProductos({
         }
       >
         <GestionCategorias
-          puedeGestionar={puedeGestionar}
+          puedeGestionar={
+            puedeGestionarCategorias
+          }
           alCambiar={() =>
             void recargarDatos()
           }

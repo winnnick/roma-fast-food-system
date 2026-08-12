@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileSearch,
+  Filter,
   FilterX,
   RefreshCw,
   Search,
@@ -32,7 +33,29 @@ interface PanelMovimientosProps {
   alNotificar: (notificacion: DatosNotificacion) => void;
 }
 
+type PeriodoRapidoMovimientos =
+  | "Hoy"
+  | "Últimos 7 días"
+  | "Este mes"
+  | "Mes anterior"
+  | "Personalizado";
+
+interface RangoFechasMovimientos {
+  fechaDesde: string;
+  fechaHasta: string;
+}
+
 const REGISTROS_POR_PAGINA = 7;
+
+const PERIODOS_RAPIDOS: Exclude<
+  PeriodoRapidoMovimientos,
+  "Personalizado"
+>[] = [
+  "Hoy",
+  "Últimos 7 días",
+  "Este mes",
+  "Mes anterior",
+];
 
 const TIPOS_MOVIMIENTO: TipoMovimientoInventario[] = [
   "Stock inicial",
@@ -51,6 +74,52 @@ function mensajeError(error: unknown): string {
     : "Ocurrió un error inesperado.";
 }
 
+function fechaIsoLocal(fecha: Date): string {
+  const ano = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function crearRangoPeriodo(
+  periodo: Exclude<PeriodoRapidoMovimientos, "Personalizado">,
+): RangoFechasMovimientos {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  if (periodo === "Hoy") {
+    const fecha = fechaIsoLocal(hoy);
+    return { fechaDesde: fecha, fechaHasta: fecha };
+  }
+
+  if (periodo === "Últimos 7 días") {
+    const desde = new Date(hoy);
+    desde.setDate(desde.getDate() - 6);
+    return {
+      fechaDesde: fechaIsoLocal(desde),
+      fechaHasta: fechaIsoLocal(hoy),
+    };
+  }
+
+  if (periodo === "Mes anterior") {
+    const desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    const hasta = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    return {
+      fechaDesde: fechaIsoLocal(desde),
+      fechaHasta: fechaIsoLocal(hasta),
+    };
+  }
+
+  return {
+    fechaDesde: fechaIsoLocal(
+      new Date(hoy.getFullYear(), hoy.getMonth(), 1),
+    ),
+    fechaHasta: fechaIsoLocal(hoy),
+  };
+}
+
+const RANGO_INICIAL_MOVIMIENTOS = crearRangoPeriodo("Este mes");
+
 function fechaCorta(fechaIso: string): string {
   return new Intl.DateTimeFormat("es-BO", {
     day: "2-digit",
@@ -65,7 +134,6 @@ function horaCorta(fechaIso: string): string {
     minute: "2-digit",
   }).format(new Date(fechaIso));
 }
-
 
 function claseTipo(tipo: TipoMovimientoInventario): string {
   if (
@@ -117,8 +185,20 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
   const [texto, setTexto] = useState("");
   const [insumoId, setInsumoId] = useState("");
   const [tipo, setTipo] = useState("");
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
+  const [periodoRapido, setPeriodoRapido] =
+    useState<PeriodoRapidoMovimientos>("Este mes");
+  const [fechaDesde, setFechaDesde] = useState(
+    RANGO_INICIAL_MOVIMIENTOS.fechaDesde,
+  );
+  const [fechaHasta, setFechaHasta] = useState(
+    RANGO_INICIAL_MOVIMIENTOS.fechaHasta,
+  );
+  const [fechaDesdeAplicada, setFechaDesdeAplicada] = useState(
+    RANGO_INICIAL_MOVIMIENTOS.fechaDesde,
+  );
+  const [fechaHastaAplicada, setFechaHastaAplicada] = useState(
+    RANGO_INICIAL_MOVIMIENTOS.fechaHasta,
+  );
   const [pagina, setPagina] = useState(1);
 
   const cargar = useCallback(async () => {
@@ -131,8 +211,8 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
           insumoId: insumoId ? Number(insumoId) : undefined,
           tipo: tipo ? (tipo as TipoMovimientoInventario) : undefined,
           texto: texto || undefined,
-          fechaDesde: fechaDesde || undefined,
-          fechaHasta: fechaHasta || undefined,
+          fechaDesde: fechaDesdeAplicada || undefined,
+          fechaHasta: fechaHastaAplicada || undefined,
         }),
       ]);
 
@@ -147,12 +227,19 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
     } finally {
       setCargando(false);
     }
-  }, [alNotificar, insumoId, tipo, texto, fechaDesde, fechaHasta]);
+  }, [
+    alNotificar,
+    insumoId,
+    tipo,
+    texto,
+    fechaDesdeAplicada,
+    fechaHastaAplicada,
+  ]);
 
   useEffect(() => {
     const temporizador = window.setTimeout(() => {
       void cargar();
-    }, 120);
+    }, 160);
 
     return () => window.clearTimeout(temporizador);
   }, [cargar]);
@@ -183,17 +270,48 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
     movimientos.length,
   );
 
+  function seleccionarPeriodo(
+    periodo: Exclude<PeriodoRapidoMovimientos, "Personalizado">,
+  ) {
+    const rango = crearRangoPeriodo(periodo);
+    setPeriodoRapido(periodo);
+    setFechaDesde(rango.fechaDesde);
+    setFechaHasta(rango.fechaHasta);
+    setFechaDesdeAplicada(rango.fechaDesde);
+    setFechaHastaAplicada(rango.fechaHasta);
+    setPagina(1);
+  }
+
+  function aplicarFechas() {
+    if (fechaDesde && fechaHasta && fechaDesde > fechaHasta) {
+      alNotificar({
+        tipo: "info",
+        titulo: "Revisa el periodo seleccionado",
+        mensaje: "La fecha inicial no puede ser posterior a la fecha final.",
+      });
+      return;
+    }
+
+    setFechaDesdeAplicada(fechaDesde);
+    setFechaHastaAplicada(fechaHasta);
+    setPagina(1);
+  }
+
   function limpiar() {
+    const rango = crearRangoPeriodo("Este mes");
     setTexto("");
     setInsumoId("");
     setTipo("");
-    setFechaDesde("");
-    setFechaHasta("");
+    setPeriodoRapido("Este mes");
+    setFechaDesde(rango.fechaDesde);
+    setFechaHasta(rango.fechaHasta);
+    setFechaDesdeAplicada(rango.fechaDesde);
+    setFechaHastaAplicada(rango.fechaHasta);
     setPagina(1);
   }
 
   return (
-    <div className="min-h-[38rem]">
+    <div className="min-h-152">
       <header className="border-b border-slate-200 p-4 dark:border-slate-700">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -201,123 +319,189 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
               Movimientos de inventario
             </h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Revisa entradas, consumos, ajustes y conteos sin mezclar información secundaria.
+              Historial de entradas, consumos, ajustes y conteos registrados.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              {movimientos.length} movimientos
-            </span>
-
-            <button
-              type="button"
-              title="Actualizar movimientos"
-              aria-label="Actualizar movimientos"
-              onClick={() => void cargar()}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <RefreshCw size={17} />
-            </button>
-          </div>
+          <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            {movimientos.length} movimientos
+          </span>
         </div>
 
-        <div className="mt-4 grid gap-2 2xl:grid-cols-[minmax(300px,1.35fr)_220px_220px_minmax(310px,.95fr)_48px]">
-          <div className="relative">
-            <Search
-              size={18}
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              type="search"
-              value={texto}
-              placeholder="Pedido, insumo, motivo o usuario"
-              onChange={(evento) => {
-                setTexto(evento.target.value);
-                setPagina(1);
-              }}
-              className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:focus:ring-red-950/50"
-            />
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-950/35">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
+                <Filter size={18} className="text-red-700 dark:text-red-300" />
+                Periodo de análisis
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {PERIODOS_RAPIDOS.map((periodo) => (
+                  <button
+                    key={periodo}
+                    type="button"
+                    disabled={cargando}
+                    onClick={() => seleccionarPeriodo(periodo)}
+                    className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition-colors sm:text-sm ${
+                      periodoRapido === periodo
+                        ? "border-red-700 bg-red-700 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-red-800 dark:hover:bg-red-950/30 dark:hover:text-red-200"
+                    } disabled:opacity-50`}
+                  >
+                    {periodo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[170px_170px_auto_auto_44px]">
+              <label>
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Fecha inicial
+                </span>
+                <div className="relative mt-1.5">
+                  <CalendarDays
+                    size={17}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="date"
+                    value={fechaDesde}
+                    disabled={cargando}
+                    onChange={(evento) => {
+                      setPeriodoRapido("Personalizado");
+                      setFechaDesde(evento.target.value);
+                    }}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50 dark:disabled:bg-slate-800"
+                  />
+                </div>
+              </label>
+
+              <label>
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Fecha final
+                </span>
+                <div className="relative mt-1.5">
+                  <CalendarDays
+                    size={17}
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="date"
+                    value={fechaHasta}
+                    disabled={cargando}
+                    onChange={(evento) => {
+                      setPeriodoRapido("Personalizado");
+                      setFechaHasta(evento.target.value);
+                    }}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50 dark:disabled:bg-slate-800"
+                  />
+                </div>
+              </label>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={aplicarFechas}
+                className="inline-flex h-11 items-center justify-center gap-2 self-end rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+              >
+                <Filter size={17} />
+                Aplicar
+              </button>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={() => void cargar()}
+                className="inline-flex h-11 items-center justify-center gap-2 self-end rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <RefreshCw
+                  size={17}
+                  className={cargando ? "animate-spin" : ""}
+                />
+                Actualizar
+              </button>
+
+              <button
+                type="button"
+                title="Limpiar filtros"
+                aria-label="Limpiar filtros"
+                disabled={cargando}
+                onClick={limpiar}
+                className="inline-flex h-11 w-11 items-center justify-center self-end rounded-xl border border-slate-300 bg-white text-slate-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-red-800 dark:hover:bg-red-950/30 dark:hover:text-red-200"
+              >
+                <FilterX size={17} />
+              </button>
+            </div>
           </div>
 
-          <select
-            value={insumoId}
-            onChange={(evento) => {
-              setInsumoId(evento.target.value);
-              setPagina(1);
-            }}
-            className="h-11 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-red-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-          >
-            <option value="">Todos los insumos</option>
-            {insumos.map((insumo) => (
-              <option key={insumo.id} value={insumo.id}>
-                {insumo.nombre}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={tipo}
-            onChange={(evento) => {
-              setTipo(evento.target.value);
-              setPagina(1);
-            }}
-            className="h-11 min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-red-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-          >
-            <option value="">Todos los movimientos</option>
-            {TIPOS_MOVIMIENTO.map((tipoMovimiento) => (
-              <option key={tipoMovimiento} value={tipoMovimiento}>
-                {tipoMovimiento}
-              </option>
-            ))}
-          </select>
-
-          <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900">
-            <label className="relative border-r border-slate-200 dark:border-slate-700">
-              <span className="sr-only">Fecha inicial</span>
-              <CalendarDays
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="date"
-                value={fechaDesde}
-                onChange={(evento) => {
-                  setFechaDesde(evento.target.value);
-                  setPagina(1);
-                }}
-                className="h-11 w-full bg-transparent pl-9 pr-2 text-xs font-semibold text-slate-700 outline-none dark:text-slate-200"
-              />
+          <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 lg:grid-cols-[minmax(300px,1fr)_240px_240px]">
+            <label className="min-w-0">
+              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Buscar
+              </span>
+              <div className="relative mt-1.5">
+                <Search
+                  size={17}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="search"
+                  value={texto}
+                  placeholder="Pedido, insumo, motivo o usuario..."
+                  onChange={(evento) => {
+                    setTexto(evento.target.value);
+                    setPagina(1);
+                  }}
+                  className="h-10 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-xs font-semibold text-slate-700 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+                />
+              </div>
             </label>
 
-            <label className="relative">
-              <span className="sr-only">Fecha final</span>
-              <CalendarDays
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="date"
-                value={fechaHasta}
+            <label className="min-w-0">
+              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Insumo
+              </span>
+              <select
+                value={insumoId}
                 onChange={(evento) => {
-                  setFechaHasta(evento.target.value);
+                  setInsumoId(evento.target.value);
                   setPagina(1);
                 }}
-                className="h-11 w-full bg-transparent pl-9 pr-2 text-xs font-semibold text-slate-700 outline-none dark:text-slate-200"
-              />
+                className="mt-1.5 h-10 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+              >
+                <option value="">Todos los insumos</option>
+                {insumos.map((insumo) => (
+                  <option key={insumo.id} value={insumo.id}>
+                    {insumo.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="min-w-0">
+              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Movimiento
+              </span>
+              <select
+                value={tipo}
+                onChange={(evento) => {
+                  setTipo(evento.target.value);
+                  setPagina(1);
+                }}
+                className="mt-1.5 h-10 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+              >
+                <option value="">Todos los movimientos</option>
+                {TIPOS_MOVIMIENTO.map((tipoMovimiento) => (
+                  <option key={tipoMovimiento} value={tipoMovimiento}>
+                    {tipoMovimiento}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
-
-          <button
-            type="button"
-            title="Limpiar filtros"
-            aria-label="Limpiar filtros"
-            onClick={limpiar}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            <FilterX size={17} />
-          </button>
-        </div>
+        </section>
       </header>
 
       {cargando ? (
@@ -341,7 +525,7 @@ function PanelMovimientos({ alNotificar }: PanelMovimientosProps) {
         </div>
       ) : (
         <>
-          <div className="max-h-[35.25rem] overflow-y-auto">
+          <div className="max-h-141 overflow-y-auto">
             <div className="sticky top-0 z-10 hidden grid-cols-[minmax(0,1.55fr)_minmax(0,1.35fr)_minmax(0,.75fr)_minmax(0,.95fr)_minmax(0,.8fr)] gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 lg:grid">
               <span>Fecha y usuario</span>
               <span>Insumo</span>

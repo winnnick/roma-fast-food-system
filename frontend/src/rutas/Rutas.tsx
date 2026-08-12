@@ -123,13 +123,7 @@ function Rutas() {
 
           <Route
             path="/pantalla-pedidos"
-            element={
-              <RutaProtegida>
-                <RutaConPermiso permiso="VENTAS_VER">
-                  <PantallaPedidos />
-                </RutaConPermiso>
-              </RutaProtegida>
-            }
+            element={<PantallaPedidos />}
           />
 
           {/* Rutas internas protegidas */}
@@ -182,7 +176,7 @@ function Rutas() {
             <Route
               path="clientes"
               element={
-                <RutaConPermiso permiso="VENTAS_VER">
+                <RutaConPermiso permiso="CLIENTES_VER">
                   <Clientes />
                 </RutaConPermiso>
               }

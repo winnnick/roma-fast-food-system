@@ -1,4 +1,5 @@
 import type { RolUsuario } from "./auth";
+import type { PermisoSistema } from "./rol";
 
 export type EstadoUsuario =
   | "Activo"
@@ -9,11 +10,21 @@ export interface Usuario {
   username: string;
   nombreCompleto: string;
 
-  /** Rol principal conservado por compatibilidad. */
+  /** Rol principal de la cuenta. */
   rol: RolUsuario;
 
-  /** Roles efectivos asignados a la cuenta. */
+  /**
+   * Roles efectivos asignados a la cuenta. Incluye el rol principal
+   * y, cuando corresponde, roles adicionales otorgados desde
+   * Roles y permisos.
+   */
   roles: RolUsuario[];
+
+  /**
+   * Capacidades concedidas únicamente a esta cuenta. No incluye
+   * permisos heredados de sus roles.
+   */
+  permisosAdicionales: PermisoSistema[];
 
   estado: EstadoUsuario;
   fechaRegistro: string;
@@ -23,16 +34,11 @@ export interface Usuario {
 export interface CrearUsuarioDto {
   username: string;
   nombreCompleto: string;
-
-  /**
-   * Rol principal. Se conserva para que la interfaz actual
-   * continúe funcionando durante la transición multirrol.
-   */
   rol: RolUsuario;
 
   /**
-   * Cuando se envía, reemplaza a `rol` como fuente de los
-   * roles efectivos. La interfaz del siguiente bloque lo usará.
+   * Campo conservado por compatibilidad. Los roles adicionales se
+   * administran desde Roles y permisos.
    */
   roles?: RolUsuario[];
 
@@ -45,4 +51,9 @@ export interface ActualizarUsuarioDto {
   rol: RolUsuario;
   roles?: RolUsuario[];
   password?: string;
+}
+
+export interface ActualizarAccesosUsuarioDto {
+  roles: RolUsuario[];
+  permisosAdicionales: PermisoSistema[];
 }

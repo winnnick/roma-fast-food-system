@@ -36,7 +36,12 @@ import {
 
 import {
   listarVentas,
+  obtenerResumenPedidosYa,
 } from "./ventaServicio";
+
+import type {
+  ResumenPedidosYaPeriodo,
+} from "../tipos/venta";
 
 export interface DatosReportesAdministrativos {
   periodo: FiltroPeriodoAnalitica;
@@ -49,6 +54,7 @@ export interface DatosReportesAdministrativos {
   inventario: FilaReporteInventario[];
   usuarios: FilaReporteUsuario[];
   auditoria: RegistroAuditoria[];
+  pedidosYa: ResumenPedidosYaPeriodo;
 }
 
 function estaEnPeriodo(
@@ -85,6 +91,7 @@ export async function obtenerDatosReportesAdministrativos(
     ventasPersistidas,
     movimientosInventario,
     auditoria,
+    pedidosYa,
   ] = await Promise.all([
     obtenerPanelAdministrativo(periodo),
     obtenerConciliacionCaja(periodo),
@@ -97,6 +104,10 @@ export async function obtenerDatosReportesAdministrativos(
       fechaDesde: periodo.fechaDesde,
       fechaHasta: periodo.fechaHasta,
     }),
+    obtenerResumenPedidosYa(
+      periodo.fechaDesde,
+      periodo.fechaHasta,
+    ),
   ]);
 
   const ventas: FilaReporteVenta[] =
@@ -117,6 +128,8 @@ export async function obtenerDatosReportesAdministrativos(
           venta.fechaHoraCobro,
 
         cliente: venta.clienteNombre,
+        canalVenta: venta.canalVenta,
+        referenciaPedidosYa: venta.referenciaPedidosYa,
 
         productos: venta.detalles
           .map(
@@ -229,6 +242,9 @@ export async function obtenerDatosReportesAdministrativos(
         cierresCaja:
           usuario.cierresCaja,
 
+        eventosAuditoria:
+          usuario.eventosAuditoria,
+
         totalAcciones:
           usuario.totalAcciones,
       }),
@@ -245,6 +261,7 @@ export async function obtenerDatosReportesAdministrativos(
     inventario,
     usuarios,
     auditoria,
+    pedidosYa,
   };
 }
 

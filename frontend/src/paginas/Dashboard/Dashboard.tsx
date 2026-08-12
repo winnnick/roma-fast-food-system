@@ -662,7 +662,7 @@ function CentroAlertas({
           </p>
         </div>
       ) : (
-        <div className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+        <div className="mt-4 max-h-112 space-y-3 overflow-y-auto pr-1">
           {alertas.map((alerta) => {
             const estilo =
               obtenerEstiloAlerta(
@@ -805,7 +805,7 @@ function ActividadRecientePanel({
     );
 
   return (
-    <section className="flex h-[32rem] flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-panel">
+    <section className="flex h-128 flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-panel">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -1050,7 +1050,7 @@ function ProductosMasVendidos({
   );
 
   return (
-    <section className="flex h-full min-h-[17rem] flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-panel">
+    <section className="flex h-full min-h-68 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-panel">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -1229,7 +1229,7 @@ function MetodosPagoCompacto({
     ) || 1;
 
   return (
-    <section className="flex h-full min-h-[17rem] flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-panel">
+    <section className="flex h-full min-h-68 flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-panel">
       <div>
         <div className="flex items-center gap-2">
           <CreditCard
@@ -1483,13 +1483,54 @@ function Dashboard() {
     setGestionandoAlerta,
   ] = useState(false);
 
-  const puedeGestionarAlertas =
+  const esAdministrador =
     usuario?.roles?.includes(
       "Administrador",
-    ) === true ||
-    usuario?.permisos.includes(
-      "REPORTES_VER",
     ) === true;
+
+  const tienePermiso = (
+    permiso:
+      | "DASHBOARD_INDICADORES_VER"
+      | "DASHBOARD_GRAFICOS_VER"
+      | "DASHBOARD_ALERTAS_VER"
+      | "DASHBOARD_ACTIVIDAD_VER"
+      | "DASHBOARD_ALERTAS_GESTIONAR",
+  ) =>
+    esAdministrador ||
+    usuario?.permisos.includes(
+      permiso,
+    ) === true;
+
+  const puedeVerIndicadores =
+    tienePermiso(
+      "DASHBOARD_INDICADORES_VER",
+    );
+
+  const puedeVerGraficos =
+    tienePermiso(
+      "DASHBOARD_GRAFICOS_VER",
+    );
+
+  const puedeVerAlertas =
+    tienePermiso(
+      "DASHBOARD_ALERTAS_VER",
+    );
+
+  const puedeVerActividad =
+    tienePermiso(
+      "DASHBOARD_ACTIVIDAD_VER",
+    );
+
+  const puedeGestionarAlertas =
+    tienePermiso(
+      "DASHBOARD_ALERTAS_GESTIONAR",
+    );
+
+  const tieneSeccionesDashboard =
+    puedeVerIndicadores ||
+    puedeVerGraficos ||
+    puedeVerAlertas ||
+    puedeVerActividad;
 
   const sincronizarAlertasDesdePanel =
     useCallback(
@@ -1670,6 +1711,10 @@ function Dashboard() {
   function gestionarAlerta(
     alerta: AlertaAdministrativa,
   ) {
+    if (!puedeGestionarAlertas) {
+      return;
+    }
+
     setAlertaSeleccionada(alerta);
   }
 
@@ -1696,7 +1741,11 @@ function Dashboard() {
   }
 
   function mantenerAlerta() {
-    if (!alertaSeleccionada) {
+    if (
+      !alertaSeleccionada ||
+      !puedeGestionarAlertas
+    ) {
+      setAlertaSeleccionada(null);
       return;
     }
 
@@ -1708,7 +1757,11 @@ function Dashboard() {
   }
 
   async function borrarAlerta() {
-    if (!alertaSeleccionada) {
+    if (
+      !alertaSeleccionada ||
+      !puedeGestionarAlertas
+    ) {
+      setAlertaSeleccionada(null);
       return;
     }
 
@@ -1826,202 +1879,236 @@ function Dashboard() {
   return (
     <>
       <div className="space-y-5">
-        <FiltroPeriodo
-          periodoRapido={
-            periodoRapido
-          }
-          filtro={filtroBorrador}
-          cargando={cargando}
-          alSeleccionarPeriodo={
-            seleccionarPeriodo
-          }
-          alCambiarFiltro={
-            cambiarFiltro
-          }
-          alAplicar={aplicarFiltro}
-          alActualizar={
-            actualizarPanel
-          }
-        />
+        {tieneSeccionesDashboard && (
+          <FiltroPeriodo
+            periodoRapido={
+              periodoRapido
+            }
+            filtro={filtroBorrador}
+            cargando={cargando}
+            alSeleccionarPeriodo={
+              seleccionarPeriodo
+            }
+            alCambiarFiltro={
+              cambiarFiltro
+            }
+            alAplicar={aplicarFiltro}
+            alActualizar={
+              actualizarPanel
+            }
+          />
+        )}
 
-        {error && (
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        {!tieneSeccionesDashboard && (
+          <section className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-panel dark:border-slate-700 dark:bg-slate-900">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Activity size={26} />
+            </div>
+
+            <h2 className="mt-4 text-lg font-black text-slate-900 dark:text-white">
+              Sin secciones asignadas
+            </h2>
+
+            <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500 dark:text-slate-400">
+              Tu rol permite acceder al Dashboard, pero no tiene secciones de consulta habilitadas.
+            </p>
+          </section>
+        )}
+
+        {error && tieneSeccionesDashboard && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/35">
             <AlertTriangle
               size={18}
-              className="mt-0.5 shrink-0 text-amber-700"
+              className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-300"
             />
 
             <div>
-              <p className="text-sm font-black text-amber-900">
+              <p className="text-sm font-black text-amber-900 dark:text-amber-100">
                 No se pudo actualizar el periodo
               </p>
 
-              <p className="mt-1 text-sm text-amber-700">
+              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
                 {error}. Se muestran los últimos datos disponibles.
               </p>
             </div>
           </div>
         )}
 
-        <section className="space-y-3">
-          <div className="grid gap-3 xl:grid-cols-12">
-            <div className="xl:col-span-3">
-              <KpiPrincipal
-                titulo="Ventas netas"
-                valor={formatearMoneda(
-                  panel.comerciales
-                    .ventasNetas,
-                )}
-                descripcion="Importe efectivamente cobrado dentro del periodo filtrado."
-              />
+        {puedeVerIndicadores && (
+          <section className="space-y-3">
+            <div className="grid gap-3 xl:grid-cols-12">
+              <div className="xl:col-span-3">
+                <KpiPrincipal
+                  titulo="Ventas netas"
+                  valor={formatearMoneda(
+                    panel.comerciales
+                      .ventasNetas,
+                  )}
+                  descripcion="Importe efectivamente cobrado dentro del periodo filtrado."
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:col-span-9 xl:grid-cols-5">
+                <KpiCompacta
+                  titulo="Pedidos registrados"
+                  valor={String(
+                    panel.comerciales
+                      .pedidosRegistrados,
+                  )}
+                  descripcion={`${panel.comerciales.pedidosCobrados} cobrados en el periodo`}
+                  icono={ReceiptText}
+                  tono="azul"
+                />
+
+                <KpiCompacta
+                  titulo="Estado de caja"
+                  valor={
+                    panel.caja.cajaAbierta
+                      ? "Abierta"
+                      : `${panel.caja.sesionesCerradasPeriodo} cierres`
+                  }
+                  descripcion={
+                    panel.caja.cajaAbierta
+                      ? `Esperado: ${formatearMoneda(panel.caja.efectivoEsperado)}`
+                      : `${panel.caja.sesionesConDiferencia} con diferencia`
+                  }
+                  icono={WalletCards}
+                  tono="violeta"
+                />
+
+                <KpiCompacta
+                  titulo="Efectivo / QR"
+                  valor={formatearMoneda(
+                    efectivo,
+                  )}
+                  descripcion={`QR: ${formatearMoneda(
+                    qr,
+                  )}`}
+                  icono={CreditCard}
+                  tono="verde"
+                />
+
+                <KpiCompacta
+                  titulo="Descuentos"
+                  valor={`${panel.comerciales.descuentosAplicados} registros`}
+                  descripcion={`Valorado: ${formatearMoneda(panel.comerciales.descuentosOtorgados)}`}
+                  icono={Tag}
+                  tono="rosa"
+                />
+
+                <KpiCompacta
+                  titulo="Salud del inventario"
+                  valor={`${panel.inventario.insumosStockNegativo} negativos`}
+                  descripcion={`${totalAlertasStock} alertas de stock`}
+                  icono={Boxes}
+                  tono="ambar"
+                />
+              </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:col-span-9 xl:grid-cols-5">
+            <div className="grid gap-3 md:grid-cols-3">
               <KpiCompacta
-                titulo="Pedidos registrados"
-                valor={String(
-                  panel.comerciales
-                    .pedidosRegistrados,
-                )}
-                descripcion={`${panel.comerciales.pedidosCobrados} cobrados en el periodo`}
-                icono={ReceiptText}
-                tono="azul"
-              />
-
-              <KpiCompacta
-                titulo="Estado de caja"
-                valor={
-                  panel.caja.cajaAbierta
-                    ? "Abierta"
-                    : `${panel.caja.sesionesCerradasPeriodo} cierres`
-                }
-                descripcion={
-                  panel.caja.cajaAbierta
-                    ? `Esperado: ${formatearMoneda(panel.caja.efectivoEsperado)}`
-                    : `${panel.caja.sesionesConDiferencia} con diferencia`
-                }
-                icono={WalletCards}
-                tono="violeta"
-              />
-
-              <KpiCompacta
-                titulo="Efectivo / QR"
+                titulo="Diferencia acumulada"
                 valor={formatearMoneda(
-                  efectivo,
+                  panel.caja
+                    .diferenciaAcumulada,
                 )}
-                descripcion={`QR: ${formatearMoneda(
-                  qr,
-                )}`}
-                icono={CreditCard}
-                tono="verde"
+                descripcion="Suma de diferencias registradas en cierres."
+                icono={TrendingDown}
+                tono={
+                  panel.caja
+                    .diferenciaAcumulada < 0
+                    ? "rosa"
+                    : "verde"
+                }
               />
 
               <KpiCompacta
-                titulo="Descuentos"
-                valor={`${panel.comerciales.descuentosAplicados} registros`}
-                descripcion={`Valorado: ${formatearMoneda(panel.comerciales.descuentosOtorgados)}`}
-                icono={Tag}
+                titulo="Anulaciones"
+                valor={`${panel.comerciales.pedidosAnulados} pedidos`}
+                descripcion={`${panel.comerciales.porcentajeAnulacion}% del movimiento registrado.`}
+                icono={AlertTriangle}
                 tono="rosa"
               />
 
               <KpiCompacta
-                titulo="Salud del inventario"
-                valor={`${panel.inventario.insumosStockNegativo} negativos`}
-                descripcion={`${totalAlertasStock} alertas de stock`}
-                icono={Boxes}
-                tono="ambar"
+                titulo="Mermas valoradas"
+                valor={formatearMoneda(
+                  panel.inventario
+                    .costoMermasValoradas,
+                )}
+                descripcion="Solo considera insumos con valoración económica activa."
+                icono={CircleDollarSign}
+                tono="azul"
               />
             </div>
-          </div>
+          </section>
+        )}
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <KpiCompacta
-              titulo="Diferencia acumulada"
-              valor={formatearMoneda(
-                panel.caja
-                  .diferenciaAcumulada,
-              )}
-              descripcion="Suma de diferencias registradas en cierres."
-              icono={TrendingDown}
-              tono={
-                panel.caja
-                  .diferenciaAcumulada < 0
-                  ? "rosa"
-                  : "verde"
-              }
-            />
+        {(puedeVerAlertas ||
+          puedeVerActividad) && (
+          <section
+            className={`grid items-stretch gap-5 ${
+              puedeVerAlertas &&
+              puedeVerActividad
+                ? "xl:grid-cols-2"
+                : "grid-cols-1"
+            }`}
+          >
+            {puedeVerAlertas && (
+              <CentroAlertas
+                alertas={
+                  alertasVisibles
+                }
+                alertasNuevas={
+                  alertasNuevas
+                }
+                puedeGestionar={
+                  puedeGestionarAlertas
+                }
+                alGestionar={
+                  gestionarAlerta
+                }
+              />
+            )}
 
-            <KpiCompacta
-              titulo="Anulaciones"
-              valor={`${panel.comerciales.pedidosAnulados} pedidos`}
-              descripcion={`${panel.comerciales.porcentajeAnulacion}% del movimiento registrado.`}
-              icono={AlertTriangle}
-              tono="rosa"
-            />
+            {puedeVerActividad && (
+              <ActividadRecientePanel
+                actividades={
+                  panel.actividadReciente
+                }
+              />
+            )}
+          </section>
+        )}
 
-            <KpiCompacta
-              titulo="Mermas valoradas"
-              valor={formatearMoneda(
-                panel.inventario
-                  .costoMermasValoradas,
-              )}
-              descripcion="Solo considera insumos con valoración económica activa."
-              icono={CircleDollarSign}
-              tono="azul"
-            />
-          </div>
-        </section>
+        {puedeVerGraficos && (
+          <>
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
+              <GraficoVentasDia
+                data={panel.ventasPorDia}
+              />
 
-<section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.8fr)]">
-  <div className="grid h-full min-w-0 grid-rows-[minmax(20rem,1fr)_auto] gap-5">
-    <CentroAlertas
-      alertas={
-        alertasVisibles
-      }
-      alertasNuevas={
-        alertasNuevas
-      }
-      puedeGestionar={
-        puedeGestionarAlertas
-      }
-      alGestionar={
-        gestionarAlerta
-      }
-    />
+              <DemandaPorHoraCompacta
+                data={panel.ventasPorHora}
+              />
+            </section>
 
-    <GraficoVentasDia
-      data={panel.ventasPorDia}
-    />
-  </div>
+            <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1.58fr)]">
+              <MetodosPagoCompacto
+                metodos={
+                  panel.metodosPago
+                }
+              />
 
-  <div className="min-w-0 space-y-5">
-    <ActividadRecientePanel
-      actividades={
-        panel.actividadReciente
-      }
-    />
-
-    <DemandaPorHoraCompacta
-      data={panel.ventasPorHora}
-    />
-  </div>
-</section>
-
-<section className="grid items-stretch gap-5 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1.58fr)]">
-  <MetodosPagoCompacto
-    metodos={
-      panel.metodosPago
-    }
-  />
-
-  <ProductosMasVendidos
-    productos={
-      panel.productosMasVendidos
-    }
-  />
-</section>
-
-
+              <ProductosMasVendidos
+                productos={
+                  panel.productosMasVendidos
+                }
+              />
+            </section>
+          </>
+        )}
       </div>
 
       <ModalConfirmacion

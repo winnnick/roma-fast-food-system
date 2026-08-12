@@ -441,7 +441,9 @@ function construirIndicadoresComerciales(
 
   const ventasBrutas = sumar(
     pagosPeriodo.map(
-      (pago) => pago.subtotal,
+      (pago) =>
+        pago.totalCobrado +
+        pago.montoDescuento,
     ),
   );
 
@@ -467,6 +469,20 @@ function construirIndicadoresComerciales(
         "Pendiente de cobro",
     ).length;
 
+  const montoPagadoPorVenta =
+    new Map<number, number>();
+
+  for (const pago of pagos) {
+    montoPagadoPorVenta.set(
+      pago.ventaId,
+      redondearMoneda(
+        (montoPagadoPorVenta.get(
+          pago.ventaId,
+        ) ?? 0) + pago.totalCobrado,
+      ),
+    );
+  }
+
   const ventasPendientes = sumar(
     ventasPeriodo
       .filter(
@@ -475,23 +491,54 @@ function construirIndicadoresComerciales(
           "Pendiente de cobro",
       )
       .map(
-        (venta) => venta.total,
+        (venta) =>
+          Math.max(
+            0,
+            venta.total -
+              (montoPagadoPorVenta.get(
+                venta.id,
+              ) ?? 0),
+          ),
       ),
   );
 
+  const ventasCobradasPeriodo =
+    ventas.filter(
+      (venta) =>
+        venta.estadoCobro === "Cobrada" &&
+        fechaEnPeriodo(
+          venta.fechaHoraCobro,
+          limites,
+        ),
+    );
+
+  const cantidadVentasConPago =
+    new Set(
+      pagosPeriodo.map(
+        (pago) => pago.ventaId,
+      ),
+    ).size;
+
+  const cantidadVentasConPagoAnterior =
+    new Set(
+      pagosPeriodoAnterior.map(
+        (pago) => pago.ventaId,
+      ),
+    ).size;
+
   const ticketPromedio =
-    pagosPeriodo.length > 0
+    cantidadVentasConPago > 0
       ? redondearMoneda(
           ventasNetas /
-            pagosPeriodo.length,
+            cantidadVentasConPago,
         )
       : 0;
 
   const ticketAnterior =
-    pagosPeriodoAnterior.length > 0
+    cantidadVentasConPagoAnterior > 0
       ? redondearMoneda(
           ventasNetasAnterior /
-            pagosPeriodoAnterior.length,
+            cantidadVentasConPagoAnterior,
         )
       : 0;
 
@@ -516,7 +563,7 @@ function construirIndicadoresComerciales(
     pedidosRegistrados:
       ventasPeriodo.length,
     pedidosCobrados:
-      pagosPeriodo.length,
+      ventasCobradasPeriodo.length,
     pedidosPendientes,
     pedidosAnulados,
 

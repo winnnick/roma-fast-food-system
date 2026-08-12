@@ -164,7 +164,7 @@ function ActividadReciente({
       ) : (
         <div
           className="
-            mt-5 max-h-[540px]
+            mt-5 max-h-135
             space-y-1 overflow-y-auto
             pr-1
           "

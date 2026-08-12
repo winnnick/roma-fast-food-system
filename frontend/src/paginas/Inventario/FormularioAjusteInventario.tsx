@@ -21,6 +21,8 @@ import type {
 interface Props {
   insumo: InsumoInventario;
   cargando: boolean;
+  puedeAumentar: boolean;
+  puedeDisminuir: boolean;
   alGuardar: (datos: RegistrarAjusteManualInventarioDto) => Promise<void>;
   alCancelar: () => void;
 }
@@ -46,10 +48,14 @@ function formatearCantidadOperativa(
 function FormularioAjusteInventario({
   insumo,
   cargando,
+  puedeAumentar,
+  puedeDisminuir,
   alGuardar,
   alCancelar,
 }: Props) {
-  const [tipo, setTipo] = useState<TipoAjuste>("Aumentar");
+  const [tipo, setTipo] = useState<TipoAjuste>(
+    puedeAumentar ? "Aumentar" : "Disminuir",
+  );
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +72,14 @@ function FormularioAjusteInventario({
 
     if (!Number.isInteger(cantidadNumerica) || cantidadNumerica <= 0) {
       setError(`La cantidad debe ser un número entero mayor que cero en ${insumo.unidadBase}.`);
+      return;
+    }
+
+    if (
+      (tipo === "Aumentar" && !puedeAumentar) ||
+      (tipo === "Disminuir" && !puedeDisminuir)
+    ) {
+      setError("Tu rol no tiene permiso para realizar este tipo de ajuste.");
       return;
     }
 
@@ -104,37 +118,42 @@ function FormularioAjusteInventario({
           </div>
         </section>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            disabled={cargando}
-            onClick={() => {
-              setTipo("Aumentar");
-              setError(null);
-            }}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition ${
-              tipo === "Aumentar"
-                ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            }`}
-          >
-            <ArrowUpCircle size={18} /> Aumentar stock
-          </button>
-          <button
-            type="button"
-            disabled={cargando}
-            onClick={() => {
-              setTipo("Disminuir");
-              setError(null);
-            }}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition ${
-              tipo === "Disminuir"
-                ? "border-red-600 bg-red-600 text-white shadow-sm"
-                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            }`}
-          >
-            <ArrowDownCircle size={18} /> Disminuir stock
-          </button>
+        <div className={`grid gap-3 ${puedeAumentar && puedeDisminuir ? "sm:grid-cols-2" : "grid-cols-1"}`}>
+          {puedeAumentar && (
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() => {
+                setTipo("Aumentar");
+                setError(null);
+              }}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                tipo === "Aumentar"
+                  ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              }`}
+            >
+              <ArrowUpCircle size={18} /> Aumentar stock
+            </button>
+          )}
+
+          {puedeDisminuir && (
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() => {
+                setTipo("Disminuir");
+                setError(null);
+              }}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                tipo === "Disminuir"
+                  ? "border-red-600 bg-red-600 text-white shadow-sm"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              }`}
+            >
+              <ArrowDownCircle size={18} /> Disminuir stock
+            </button>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">

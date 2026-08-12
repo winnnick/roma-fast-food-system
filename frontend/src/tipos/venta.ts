@@ -4,15 +4,27 @@ import type {
 } from "./caja";
 
 export type EstadoPreparacion =
+  | "En cola"
   | "En preparación"
+  | "Entrega directa"
   | "Listo"
   | "Entregado"
   | "Anulado";
 
+export type ModoInicioPreparacion =
+  | "En cola"
+  | "En preparación";
+
 export type EstadoCobro =
   | "Pendiente de cobro"
   | "Cobrada"
+  | "Pendiente de liquidación"
+  | "Liquidada"
   | "Anulada";
+
+export type CanalVenta =
+  | "Local"
+  | "PedidosYa";
 
 /**
  * Permite distinguir cómo se identificó
@@ -34,6 +46,9 @@ export interface DetalleVentaDto {
 }
 
 export interface CrearVentaDto {
+  canalVenta?: CanalVenta;
+  referenciaPedidosYa?: string | null;
+
   /**
    * Se mantiene opcional durante la migración
    * para que la interfaz actual siga compilando.
@@ -61,6 +76,7 @@ export interface DetalleVenta {
   cantidad: number;
   observacion: string | null;
   subtotal: number;
+  requierePreparacion: boolean;
 }
 
 export interface RegistrarCobroVentaDto {
@@ -70,7 +86,15 @@ export interface RegistrarCobroVentaDto {
   valorDescuento: number;
   montoDescuento: number;
 
-  totalCobrado: number;
+  /** Total definitivo de la venta luego del descuento. */
+  totalVenta: number;
+
+  /**
+   * Indica si, considerando todos los abonos registrados,
+   * la venta quedó completamente pagada.
+   */
+  pagoCompleto: boolean;
+
   metodoPago: MetodoPago;
 
   fechaHoraCobro: string;
@@ -79,6 +103,11 @@ export interface RegistrarCobroVentaDto {
 export interface Venta {
   id: number;
   numeroPedido: string;
+
+  canalVenta: CanalVenta;
+  referenciaPedidosYa: string | null;
+  liquidacionPedidosYaId: number | null;
+  fechaHoraLiquidacionPedidosYa: string | null;
 
   tipoCliente: TipoClienteVenta;
   clienteId: number | null;
@@ -96,6 +125,7 @@ export interface Venta {
   detalles: DetalleVenta[];
   observaciones: string | null;
 
+  requierePreparacion: boolean;
   subtotal: number;
 
   tipoDescuento: TipoDescuento;
@@ -116,10 +146,56 @@ export interface Venta {
   motivoAnulacion: string | null;
 
   fechaHoraRegistro: string;
-  fechaHoraInicioPreparacion: string;
+  fechaHoraInicioPreparacion: string | null;
   fechaHoraListo: string | null;
   fechaHoraEntregado: string | null;
+
+  usuarioEntregaId: number | null;
+  usuarioEntregaNombre: string | null;
+  sesionCajaIdEntrega: number | null;
+
   fechaHoraCobro: string | null;
   fechaHoraAnulacion: string | null;
   fechaHoraActualizacion: string;
 }
+
+export interface LiquidacionPedidosYa {
+  id: number;
+  numeroLiquidacion: string;
+  fechaDesde: string;
+  fechaHasta: string;
+
+  ventaIds: number[];
+  cantidadPedidos: number;
+  montoBruto: number;
+  montoRecibido: number;
+  diferencia: number;
+
+  usuarioId: number;
+  usuarioNombre: string;
+  observacion: string | null;
+  fechaHoraRegistro: string;
+}
+
+export interface RegistrarLiquidacionPedidosYaDto {
+  fechaDesde: string;
+  fechaHasta: string;
+  montoRecibido: number;
+  observacion: string | null;
+}
+
+export interface ResumenPedidosYaPeriodo {
+  fechaDesde: string;
+  fechaHasta: string;
+  pedidosEnCurso: Venta[];
+  cantidadEnCurso: number;
+  montoEnCurso: number;
+  pedidosPendientes: Venta[];
+  cantidadPendiente: number;
+  montoPendiente: number;
+  pedidosLiquidados: Venta[];
+  cantidadLiquidada: number;
+  montoLiquidado: number;
+  liquidaciones: LiquidacionPedidosYa[];
+}
+

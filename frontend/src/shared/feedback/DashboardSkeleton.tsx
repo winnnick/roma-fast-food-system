@@ -91,14 +91,14 @@ function DashboardSkeleton() {
       >
         <div
           className="
-            h-[430px]
+            h-107.5
             rounded-3xl bg-white
           "
         />
 
         <div
           className="
-            h-[430px]
+            h-107.5
             rounded-3xl bg-white
           "
         />
@@ -116,7 +116,7 @@ function DashboardSkeleton() {
           <div
             key={indice}
             className="
-              h-[420px]
+              h-105
               rounded-3xl bg-white
             "
           />

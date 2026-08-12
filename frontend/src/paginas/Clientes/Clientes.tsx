@@ -170,9 +170,24 @@ function obtenerIniciales(
 function Clientes() {
   const { usuario } = useAuth();
 
-  const puedeGestionar =
+  const puedeCrear =
     usuario?.permisos.includes(
-      "VENTAS_CREAR",
+      "CLIENTES_CREAR",
+    ) ?? false;
+
+  const puedeEditar =
+    usuario?.permisos.includes(
+      "CLIENTES_EDITAR",
+    ) ?? false;
+
+  const puedeArchivar =
+    usuario?.permisos.includes(
+      "CLIENTES_ARCHIVAR",
+    ) ?? false;
+
+  const puedeCompartir =
+    usuario?.permisos.includes(
+      "CLIENTES_COMPARTIR",
     ) ?? false;
 
   const [clientes, setClientes] =
@@ -415,7 +430,7 @@ function Clientes() {
   }
 
   function abrirNuevoCliente() {
-    if (!puedeGestionar) {
+    if (!puedeCrear) {
       return;
     }
 
@@ -426,7 +441,7 @@ function Clientes() {
   function abrirEdicion(
     cliente: Cliente,
   ) {
-    if (!puedeGestionar) {
+    if (!puedeEditar) {
       return;
     }
 
@@ -446,7 +461,12 @@ function Clientes() {
   async function guardarCliente(
     datos: CrearClienteDto,
   ) {
-    if (!puedeGestionar) {
+    const permisoValido =
+      clienteSeleccionado
+        ? puedeEditar
+        : puedeCrear;
+
+    if (!permisoValido) {
       return;
     }
 
@@ -518,6 +538,10 @@ function Clientes() {
   function abrirCompartirEntrega(
     cliente: Cliente,
   ) {
+    if (!puedeCompartir) {
+      return;
+    }
+
     if (
       !clienteTieneDatosEntrega(
         cliente,
@@ -537,7 +561,10 @@ function Clientes() {
   }
 
   async function copiarDatosEntrega() {
-    if (!clienteParaCompartir) {
+    if (
+      !clienteParaCompartir ||
+      !puedeCompartir
+    ) {
       return;
     }
 
@@ -565,7 +592,10 @@ function Clientes() {
   }
 
   function abrirWhatsappEntrega() {
-    if (!clienteParaCompartir) {
+    if (
+      !clienteParaCompartir ||
+      !puedeCompartir
+    ) {
       return;
     }
 
@@ -581,7 +611,7 @@ function Clientes() {
   async function confirmarArchivado() {
     if (
       !clienteParaArchivar ||
-      !puedeGestionar
+      !puedeArchivar
     ) {
       return;
     }
@@ -653,7 +683,7 @@ function Clientes() {
           )}
         </div>
 
-        <div className="h-[32rem] rounded-3xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-128 rounded-3xl bg-slate-200 dark:bg-slate-800" />
       </div>
     );
   }
@@ -748,7 +778,7 @@ function Clientes() {
             </div>
           </div>
 
-          {puedeGestionar && (
+          {puedeCrear && (
             <button
               type="button"
               onClick={abrirNuevoCliente}
@@ -977,65 +1007,66 @@ function Clientes() {
                     </div>
 
                     <div className="flex items-center justify-end gap-2">
-                      {puedeGestionar && (
-                        <>
-                          {!cliente.archivado &&
-                            clienteTieneDatosEntrega(
-                              cliente,
-                            ) && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  abrirCompartirEntrega(
-                                    cliente,
-                                  )
-                                }
-                                aria-label={`Compartir entrega de ${cliente.nombreCompleto}`}
-                                title="Compartir datos de entrega"
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition-all hover:-translate-y-0.5 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
-                              >
-                                <Share2 size={17} />
-                              </button>
-                            )}
-
+                      {!cliente.archivado &&
+                        puedeCompartir &&
+                        clienteTieneDatosEntrega(
+                          cliente,
+                        ) && (
                           <button
                             type="button"
                             onClick={() =>
-                              abrirEdicion(cliente)
-                            }
-                            aria-label={`Editar ${cliente.nombreCompleto}`}
-                            title="Editar cliente"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:-translate-y-0.5 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/45 dark:text-blue-300 dark:hover:bg-blue-900/60"
-                          >
-                            <Edit3 size={17} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setClienteParaArchivar(
+                              abrirCompartirEntrega(
                                 cliente,
                               )
                             }
-                            aria-label={`${cliente.archivado ? "Restaurar" : "Archivar"} ${cliente.nombreCompleto}`}
-                            title={
-                              cliente.archivado
-                                ? "Restaurar cliente"
-                                : "Archivar cliente"
-                            }
-                            className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
-                              cliente.archivado
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
-                                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                            }`}
+                            aria-label={`Compartir entrega de ${cliente.nombreCompleto}`}
+                            title="Compartir datos de entrega"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition-all hover:-translate-y-0.5 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
                           >
-                            {cliente.archivado ? (
-                              <ArchiveRestore size={17} />
-                            ) : (
-                              <Archive size={17} />
-                            )}
+                            <Share2 size={17} />
                           </button>
-                        </>
+                        )}
+
+                      {puedeEditar && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            abrirEdicion(cliente)
+                          }
+                          aria-label={`Editar ${cliente.nombreCompleto}`}
+                          title="Editar cliente"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition-all hover:-translate-y-0.5 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/45 dark:text-blue-300 dark:hover:bg-blue-900/60"
+                        >
+                          <Edit3 size={17} />
+                        </button>
+                      )}
+
+                      {puedeArchivar && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setClienteParaArchivar(
+                              cliente,
+                            )
+                          }
+                          aria-label={`${cliente.archivado ? "Restaurar" : "Archivar"} ${cliente.nombreCompleto}`}
+                          title={
+                            cliente.archivado
+                              ? "Restaurar cliente"
+                              : "Archivar cliente"
+                          }
+                          className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all hover:-translate-y-0.5 ${
+                            cliente.archivado
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                          }`}
+                        >
+                          {cliente.archivado ? (
+                            <ArchiveRestore size={17} />
+                          ) : (
+                            <Archive size={17} />
+                          )}
+                        </button>
                       )}
                     </div>
                   </article>

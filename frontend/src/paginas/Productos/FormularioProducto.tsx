@@ -3,6 +3,7 @@ import {
   ChefHat,
   Image,
   LoaderCircle,
+  PackageCheck,
   PackageOpen,
   Plus,
   Save,
@@ -28,6 +29,7 @@ import type {
   CategoriaProducto,
   ControlInventarioProducto,
   IngredienteProductoDto,
+  ModoPreparacionProducto,
   ProductoMenu,
 } from "../../tipos/producto";
 
@@ -37,7 +39,11 @@ export interface DatosFormularioProductoIntegrado {
   descripcion: string;
   categoriaId: number;
   precio: number;
+  disponiblePedidosYa: boolean;
+  precioPedidosYa: number | null;
   destacado: boolean;
+  modoPreparacion:
+    ModoPreparacionProducto;
   controlInventario:
     ControlInventarioProducto;
   imagenUrl: string | null;
@@ -56,7 +62,9 @@ interface FormularioProductoProps {
       DatosFormularioProductoIntegrado,
   ) => Promise<void>;
   alCancelar: () => void;
+  puedeGestionarCategorias: boolean;
   alGestionarCategorias: () => void;
+  soloInformacionComercial?: boolean;
 }
 
 interface FilaIngrediente {
@@ -71,7 +79,11 @@ interface EstadoFormularioProducto {
   descripcion: string;
   categoriaId: string;
   precio: string;
+  disponiblePedidosYa: boolean;
+  precioPedidosYa: string;
   destacado: boolean;
+  modoPreparacion:
+    ModoPreparacionProducto;
   controlInventario:
     ControlInventarioProducto;
   imagenUrl: string;
@@ -83,6 +95,7 @@ interface ErroresProducto {
   descripcion?: string;
   categoriaId?: string;
   precio?: string;
+  precioPedidosYa?: string;
   imagenUrl?: string;
   receta?: string;
 }
@@ -177,7 +190,9 @@ function FormularioProducto({
   cargando,
   alGuardar,
   alCancelar,
+  puedeGestionarCategorias,
   alGestionarCategorias,
+  soloInformacionComercial = false,
 }: FormularioProductoProps) {
   const [formulario, setFormulario] =
     useState<EstadoFormularioProducto>(
@@ -192,8 +207,15 @@ function FormularioProducto({
         precio:
           producto?.precio.toString() ??
           "",
+        disponiblePedidosYa:
+          producto?.disponiblePedidosYa ?? false,
+        precioPedidosYa:
+          producto?.precioPedidosYa?.toString() ?? "",
         destacado:
           producto?.destacado ?? false,
+        modoPreparacion:
+          producto?.modoPreparacion ??
+          "Requiere preparación",
         controlInventario:
           producto?.controlInventario ??
           "Con receta",
@@ -538,6 +560,23 @@ function FormularioProducto({
         "El precio supera el límite permitido.";
     }
 
+    if (formulario.disponiblePedidosYa) {
+      const precioPedidosYa = Number(
+        formulario.precioPedidosYa,
+      );
+
+      if (
+        !Number.isFinite(precioPedidosYa) ||
+        precioPedidosYa <= 0
+      ) {
+        nuevosErrores.precioPedidosYa =
+          "Ingresa el precio que se mostrará y registrará para PedidosYa.";
+      } else if (precioPedidosYa > 100000) {
+        nuevosErrores.precioPedidosYa =
+          "El precio de PedidosYa supera el límite permitido.";
+      }
+    }
+
     if (
       !esUrlValida(
         formulario.imagenUrl,
@@ -565,7 +604,9 @@ function FormularioProducto({
     }
 
     const resultadoIngredientes =
-      construirIngredientes();
+      soloInformacionComercial
+        ? { valor: null, valido: true }
+        : construirIngredientes();
 
     if (!resultadoIngredientes.valido) {
       return;
@@ -588,8 +629,16 @@ function FormularioProducto({
       precio: Number(
         formulario.precio,
       ),
+      disponiblePedidosYa:
+        formulario.disponiblePedidosYa,
+      precioPedidosYa:
+        formulario.disponiblePedidosYa
+          ? Number(formulario.precioPedidosYa)
+          : null,
       destacado:
         formulario.destacado,
+      modoPreparacion:
+        formulario.modoPreparacion,
       controlInventario:
         formulario.controlInventario,
       imagenUrl:
@@ -666,7 +715,7 @@ function FormularioProducto({
                 htmlFor="precio-producto"
                 className="text-sm font-black text-slate-700 dark:text-slate-200"
               >
-                Precio de venta
+                Precio en local
               </label>
 
               <div className="relative mt-2">
@@ -702,8 +751,100 @@ function FormularioProducto({
                   {errores.precio}
                 </p>
               )}
+
+              {!errores.precio && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Precio utilizado en las ventas realizadas directamente en el local.
+                </p>
+              )}
             </div>
           </div>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/45">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-900 dark:text-white">
+                  Venta por PedidosYa
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  Usa el mismo producto y receta, pero permite definir el precio comercial de la plataforma.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={() => {
+                  actualizarCampo(
+                    "disponiblePedidosYa",
+                    !formulario.disponiblePedidosYa,
+                  );
+
+                  if (formulario.disponiblePedidosYa) {
+                    actualizarCampo("precioPedidosYa", "");
+                  }
+                }}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-black transition-colors disabled:opacity-50 ${
+                  formulario.disponiblePedidosYa
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/35 dark:text-emerald-300"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                <PackageCheck size={16} />
+                {formulario.disponiblePedidosYa
+                  ? "Disponible en PedidosYa"
+                  : "No disponible en PedidosYa"}
+              </button>
+            </div>
+
+            {formulario.disponiblePedidosYa && (
+              <div className="mt-4 max-w-sm">
+                <label
+                  htmlFor="precio-pedidosya-producto"
+                  className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                >
+                  Precio en PedidosYa
+                </label>
+
+                <div className="relative mt-1.5">
+                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">
+                    Bs
+                  </span>
+                  <input
+                    id="precio-pedidosya-producto"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    step="0.01"
+                    value={formulario.precioPedidosYa}
+                    disabled={cargando}
+                    placeholder="0,00"
+                    onChange={(evento) =>
+                      actualizarCampo(
+                        "precioPedidosYa",
+                        evento.target.value,
+                      )
+                    }
+                    className={`w-full rounded-xl border bg-white py-3 pl-11 pr-4 text-sm font-black text-slate-900 outline-none transition dark:bg-slate-950 dark:text-slate-100 ${
+                      errores.precioPedidosYa
+                        ? "border-red-400 ring-4 ring-red-100 dark:ring-red-950/50"
+                        : "border-slate-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:focus:ring-emerald-950/50"
+                    }`}
+                  />
+                </div>
+
+                {errores.precioPedidosYa ? (
+                  <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">
+                    {errores.precioPedidosYa}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    Este importe se utilizará únicamente cuando el cajero registre el pedido por el canal PedidosYa.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
 
           <div>
             <label
@@ -749,15 +890,17 @@ function FormularioProducto({
                 Categoría
               </label>
 
-              <button
-                type="button"
-                disabled={cargando}
-                onClick={alGestionarCategorias}
-                className="inline-flex items-center gap-1.5 text-xs font-black text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
-              >
-                <Tags size={14} />
-                Gestionar categorías
-              </button>
+              {puedeGestionarCategorias && (
+                <button
+                  type="button"
+                  disabled={cargando}
+                  onClick={alGestionarCategorias}
+                  className="inline-flex items-center gap-1.5 text-xs font-black text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  <Tags size={14} />
+                  Gestionar categorías
+                </button>
+              )}
             </div>
 
             <select
@@ -801,6 +944,84 @@ function FormularioProducto({
                 {errores.categoriaId}
               </p>
             )}
+          </div>
+
+          <div>
+            <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+              Flujo del producto
+            </p>
+
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={() =>
+                  actualizarCampo(
+                    "modoPreparacion",
+                    "Requiere preparación",
+                  )
+                }
+                className={`rounded-2xl border p-3 text-left transition-colors disabled:opacity-50 ${
+                  formulario.modoPreparacion === "Requiere preparación"
+                    ? "border-amber-300 bg-amber-50 ring-2 ring-amber-100 dark:border-amber-700 dark:bg-amber-950/35 dark:ring-amber-950/60"
+                    : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <ChefHat
+                    size={17}
+                    className={
+                      formulario.modoPreparacion === "Requiere preparación"
+                        ? "text-amber-700 dark:text-amber-300"
+                        : "text-slate-400"
+                    }
+                  />
+                  <span className="text-xs font-black text-slate-900 dark:text-white">
+                    Requiere preparación
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  El pedido seguirá la cola, preparación y estado listo.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                disabled={cargando}
+                onClick={() =>
+                  actualizarCampo(
+                    "modoPreparacion",
+                    "Entrega directa",
+                  )
+                }
+                className={`rounded-2xl border p-3 text-left transition-colors disabled:opacity-50 ${
+                  formulario.modoPreparacion === "Entrega directa"
+                    ? "border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/35 dark:ring-indigo-950/60"
+                    : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <PackageCheck
+                    size={17}
+                    className={
+                      formulario.modoPreparacion === "Entrega directa"
+                        ? "text-indigo-700 dark:text-indigo-300"
+                        : "text-slate-400"
+                    }
+                  />
+                  <span className="text-xs font-black text-slate-900 dark:text-white">
+                    Entrega directa
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  Si se vende solo, podrá cobrarse y entregarse sin pasar por cocina.
+                </p>
+              </button>
+            </div>
+
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
+              Si un pedido combina productos de entrega directa con productos que requieren preparación, el pedido completo seguirá el flujo de preparación.
+            </p>
           </div>
 
           <div>
@@ -958,6 +1179,7 @@ function FormularioProducto({
         </section>
       </div>
 
+      {!soloInformacionComercial && (
       <section className="border-t border-slate-200 px-5 py-5 sm:px-6 dark:border-slate-800">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-3">
@@ -1147,6 +1369,7 @@ function FormularioProducto({
           </div>
         )}
       </section>
+      )}
 
       <div className="sticky bottom-0 z-20 flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50/95 px-5 py-4 shadow-[0_-10px_24px_-18px_rgba(15,23,42,.55)] backdrop-blur sm:flex-row sm:justify-end sm:px-6 dark:border-slate-800 dark:bg-slate-950/95">
         <button

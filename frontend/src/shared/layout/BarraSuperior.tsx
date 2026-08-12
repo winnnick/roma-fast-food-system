@@ -23,7 +23,12 @@ import {
 
 import { useNavigate } from "react-router-dom";
 
-import { useAuth } from "../../contextos/AuthContext";
+import {
+  CajaAbiertaAlCerrarSesionError,
+  useAuth,
+} from "../../contextos/AuthContext";
+
+import Modal from "../ui/Modal";
 
 interface BarraSuperiorProps {
   titulo: string;
@@ -99,9 +104,9 @@ function BarraSuperior({
   ] = useState<string | null>(null);
 
   const [
-    barraVisible,
-    setBarraVisible,
-  ] = useState(false);
+    cajaAbiertaAlSalirId,
+    setCajaAbiertaAlSalirId,
+  ] = useState<number | null>(null);
 
   const [ahora, setAhora] =
     useState(() => Date.now());
@@ -138,20 +143,10 @@ function BarraSuperior({
       ahora,
     );
 
-  useEffect(() => {
-    const cuadro =
-      window.requestAnimationFrame(
-        () => {
-          setBarraVisible(true);
-        },
-      );
-
-    return () => {
-      window.cancelAnimationFrame(
-        cuadro,
-      );
-    };
-  }, []);
+  const puedeIrACaja =
+    usuario?.permisos.includes(
+      "CAJA_VER",
+    ) ?? false;
 
   useEffect(() => {
     const intervalo =
@@ -214,22 +209,36 @@ function BarraSuperior({
     };
   }, []);
 
+  function completarSalida() {
+    setCajaAbiertaAlSalirId(null);
+    setMenuUsuarioAbierto(false);
+
+    navigate(
+      "/login",
+      {
+        replace: true,
+      },
+    );
+  }
+
   async function salir() {
     try {
       setCerrandoSesion(true);
       setErrorCerrarSesion(null);
 
       await cerrarSesion();
-
-      setMenuUsuarioAbierto(false);
-
-      navigate(
-        "/login",
-        {
-          replace: true,
-        },
-      );
+      completarSalida();
     } catch (error: unknown) {
+      if (
+        error instanceof
+        CajaAbiertaAlCerrarSesionError
+      ) {
+        setCajaAbiertaAlSalirId(
+          error.cajaId,
+        );
+        return;
+      }
+
       setErrorCerrarSesion(
         error instanceof Error
           ? error.message
@@ -240,20 +249,40 @@ function BarraSuperior({
     }
   }
 
+  async function confirmarSalidaConCajaAbierta() {
+    try {
+      setCerrandoSesion(true);
+      setErrorCerrarSesion(null);
+
+      await cerrarSesion({
+        permitirCajaAbierta: true,
+      });
+
+      completarSalida();
+    } catch (error: unknown) {
+      setCajaAbiertaAlSalirId(null);
+      setErrorCerrarSesion(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cerrar la sesión.",
+      );
+    } finally {
+      setCerrandoSesion(false);
+    }
+  }
+
+  function irACerrarCaja() {
+    setCajaAbiertaAlSalirId(null);
+    setMenuUsuarioAbierto(false);
+    navigate("/caja");
+  }
+
   return (
+    <>
     <header
       className={`
-        sticky top-0 z-30
-        border-b
+        relative z-30 shrink-0 border-b
         backdrop-blur-xl
-        transition-all
-        duration-700
-        ease-[cubic-bezier(0.22,1,0.36,1)]
-        ${
-          barraVisible
-            ? "translate-y-0 opacity-100"
-            : "-translate-y-full opacity-0"
-        }
         ${
           temaOscuro
             ? "border-slate-800 bg-slate-950/95"
@@ -263,7 +292,7 @@ function BarraSuperior({
     >
       <div
         className="
-          mx-auto flex h-[4.75rem]
+          mx-auto flex h-19
           max-w-[1800px]
           items-center
           justify-between
@@ -913,6 +942,85 @@ function BarraSuperior({
         </div>
       </div>
     </header>
+
+      <Modal
+        abierto={
+          cajaAbiertaAlSalirId !== null
+        }
+        titulo="Hay una caja abierta"
+        descripcion="Puedes cerrar sesión sin cerrar la caja, pero el turno seguirá pendiente de cierre."
+        alCerrar={() =>
+          setCajaAbiertaAlSalirId(null)
+        }
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+              <AlertTriangle size={23} />
+            </div>
+
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-100">
+                La caja N.º {cajaAbiertaAlSalirId} seguirá abierta y asociada a tu usuario.
+              </p>
+
+              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                Sus movimientos no se considerarán cerrados ni conciliados hasta que realices el cierre de caja. Al volver a iniciar sesión, podrás continuar con esa misma caja.
+              </p>
+            </div>
+          </div>
+
+          <div
+            className={`mt-6 grid gap-3 ${
+              puedeIrACaja
+                ? "grid-cols-1 sm:grid-cols-3"
+                : "grid-cols-1 sm:grid-cols-2"
+            }`}
+          >
+            <button
+              type="button"
+              disabled={cerrandoSesion}
+              onClick={() =>
+                setCajaAbiertaAlSalirId(null)
+              }
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-center text-sm font-black text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Seguir conectado
+            </button>
+
+            {puedeIrACaja && (
+              <button
+                type="button"
+                disabled={cerrandoSesion}
+                onClick={irACerrarCaja}
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-4 text-center text-sm font-black text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/15"
+              >
+                Ir a Caja
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={cerrandoSesion}
+              onClick={() =>
+                void confirmarSalidaConCajaAbierta()
+              }
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-center text-sm font-black text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cerrandoSesion ? (
+                <LoaderCircle
+                  size={17}
+                  className="animate-spin"
+                />
+              ) : (
+                <LogOut size={17} />
+              )}
+              Cerrar sesión de todos modos
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

@@ -22,7 +22,7 @@ import { useAuth } from "../../contextos/AuthContext";
 import { auditarAccion } from "../../servicios/auditoriaAccionesServicio";
 import { listarCategorias } from "../../servicios/categoriaServicio";
 import {
-  guardarNuevaVersionReceta,
+  guardarNuevaVersionRecetaInventario,
   listarInsumosInventario,
   listarRecetasInventario,
 } from "../../servicios/inventarioServicio";
@@ -43,7 +43,7 @@ import Modal from "../../shared/ui/Modal";
 import FormularioReceta from "./FormularioReceta";
 
 interface PanelRecetasProps {
-  puedeGestionar: boolean;
+  puedeGestionarRecetas: boolean;
   alNotificar: (notificacion: DatosNotificacion) => void;
   alCambio: () => Promise<void>;
 }
@@ -77,7 +77,7 @@ function moneda(valor: number): string {
 }
 
 function PanelRecetas({
-  puedeGestionar,
+  puedeGestionarRecetas,
   alNotificar,
   alCambio,
 }: PanelRecetasProps) {
@@ -187,10 +187,10 @@ function PanelRecetas({
   }
 
   async function guardar(datos: GuardarRecetaProductoDto) {
-    if (!usuario || !puedeGestionar) return;
+    if (!usuario || !puedeGestionarRecetas) return;
     try {
       setProcesando(true);
-      const receta = await guardarNuevaVersionReceta(datos, usuario);
+      const receta = await guardarNuevaVersionRecetaInventario(datos, usuario);
       await auditarAccion(
         {
           modulo: "Recetas",
@@ -238,7 +238,7 @@ function PanelRecetas({
   }
 
   return (
-    <div className="min-h-[34rem]">
+    <div className="min-h-136">
       <header className="flex flex-col gap-4 border-b border-slate-200 p-4 dark:border-slate-700 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white">Recetas técnicas</h2>
@@ -316,7 +316,7 @@ function PanelRecetas({
         </div>
       ) : (
         <>
-          <div className="max-h-[31rem] overflow-y-auto">
+          <div className="max-h-124 overflow-y-auto">
             <div className="sticky top-0 z-10 hidden grid-cols-[minmax(220px,1.15fr)_145px_minmax(250px,1.25fr)_135px_104px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 lg:grid">
               <span>Producto</span>
               <span>Estado</span>
@@ -396,7 +396,7 @@ function PanelRecetas({
                             : `${receta ? "Crear nueva versión de" : "Crear receta para"} ${producto.nombre}`
                         }
                         disabled={
-                          !puedeGestionar ||
+                          !puedeGestionarRecetas ||
                           noControla ||
                           producto.estado === "Inactivo"
                         }

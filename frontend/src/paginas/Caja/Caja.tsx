@@ -386,10 +386,34 @@ async function cargarInformacionCaja(
 function Caja() {
   const { usuario } = useAuth();
 
-  const puedeGestionar =
+  const puedeAbrirCaja =
     usuario?.permisos.includes(
-      "CAJA_GESTIONAR",
+      "CAJA_ABRIR",
     ) ?? false;
+
+  const puedeRegistrarIngresos =
+    usuario?.permisos.includes(
+      "CAJA_INGRESOS",
+    ) ?? false;
+
+  const puedeRegistrarEgresos =
+    usuario?.permisos.includes(
+      "CAJA_EGRESOS",
+    ) ?? false;
+
+  const puedeCerrarCaja =
+    usuario?.permisos.includes(
+      "CAJA_CERRAR",
+    ) ?? false;
+
+  const puedeVerHistorial =
+    usuario?.permisos.includes(
+      "CAJA_HISTORIAL",
+    ) ?? false;
+
+  const puedeRegistrarMovimiento =
+    puedeRegistrarIngresos ||
+    puedeRegistrarEgresos;
 
   const [
     cajaAbierta,
@@ -671,7 +695,7 @@ function Caja() {
   ) {
     if (
       !usuario ||
-      !puedeGestionar
+      !puedeAbrirCaja
     ) {
       return;
     }
@@ -724,9 +748,14 @@ function Caja() {
     datos:
       RegistrarMovimientoManualDto,
   ) {
+    const puedeRegistrarTipo =
+      datos.tipo === "Ingreso"
+        ? puedeRegistrarIngresos
+        : puedeRegistrarEgresos;
+
     if (
       !usuario ||
-      !puedeGestionar
+      !puedeRegistrarTipo
     ) {
       return;
     }
@@ -793,7 +822,7 @@ function Caja() {
   ) {
     if (
       !usuario ||
-      !puedeGestionar
+      !puedeCerrarCaja
     ) {
       return;
     }
@@ -1009,7 +1038,10 @@ function Caja() {
             </button>
           </div>
 
-          {puedeGestionar && (
+          {(!cajaAbierta && puedeAbrirCaja) ||
+          (cajaAbierta &&
+            (puedeRegistrarMovimiento ||
+              puedeCerrarCaja)) ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {!cajaAbierta ? (
                 <button
@@ -1024,31 +1056,35 @@ function Caja() {
                 </button>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setModalMovimiento(true)
-                    }
-                    className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-blue-700"
-                  >
-                    <Plus size={15} />
-                    Movimiento
-                  </button>
+                  {puedeRegistrarMovimiento && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalMovimiento(true)
+                      }
+                      className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-blue-700"
+                    >
+                      <Plus size={15} />
+                      Movimiento
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setModalCierre(true)
-                    }
-                    className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-red-700 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-red-800"
-                  >
-                    <LockKeyhole size={15} />
-                    Cerrar caja
-                  </button>
+                  {puedeCerrarCaja && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalCierre(true)
+                      }
+                      className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-red-700 px-3.5 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-red-800"
+                    >
+                      <LockKeyhole size={15} />
+                      Cerrar caja
+                    </button>
+                  )}
                 </>
               )}
             </div>
-          )}
+          ) : null}
         </article>
 
         <TarjetaMetrica
@@ -1153,7 +1189,7 @@ function Caja() {
             </p>
           </div>
         ) : (
-          <div className="max-h-[34rem] overflow-y-auto p-3 sm:p-4">
+          <div className="max-h-136 overflow-y-auto p-3 sm:p-4">
             <div className="mb-2 hidden grid-cols-[92px_minmax(250px,1fr)_minmax(210px,0.78fr)_minmax(210px,0.72fr)_150px] gap-3 px-4 text-[10px] font-black uppercase tracking-wide text-slate-400 xl:grid">
               <span>Tipo</span>
               <span>Detalle</span>
@@ -1306,6 +1342,7 @@ function Caja() {
       </section>
 
 
+      {puedeVerHistorial && (
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900">
         <header className="flex flex-col gap-4 border-b border-slate-100 p-5 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -1369,7 +1406,7 @@ function Caja() {
             </p>
           </div>
         ) : (
-          <div className="max-h-[36rem] overflow-y-auto p-3 sm:p-4">
+          <div className="max-h-144 overflow-y-auto p-3 sm:p-4">
             <div className="mb-2 hidden grid-cols-[76px_minmax(170px,0.95fr)_minmax(150px,0.82fr)_minmax(150px,0.82fr)_minmax(175px,1fr)_120px_120px_52px] gap-3 px-4 text-[10px] font-black uppercase tracking-wide text-slate-400 xl:grid">
               <span>N.º caja</span>
               <span>Responsable</span>
@@ -1543,6 +1580,7 @@ function Caja() {
           </div>
         )}
       </section>
+      )}
 
 
 
@@ -1569,7 +1607,14 @@ function Caja() {
       <Modal
         abierto={modalMovimiento}
         titulo="Registrar movimiento"
-        descripcion="Añade un ingreso o egreso manual a tu caja."
+        descripcion={
+          puedeRegistrarIngresos &&
+          puedeRegistrarEgresos
+            ? "Añade un ingreso o egreso manual a tu caja."
+            : puedeRegistrarIngresos
+              ? "Añade un ingreso manual a tu caja."
+              : "Registra un egreso manual de tu caja."
+        }
         ancho="mediano"
         alCerrar={() => {
           if (!procesando) {
@@ -1579,6 +1624,12 @@ function Caja() {
       >
         <FormularioMovimiento
           cargando={procesando}
+          puedeRegistrarIngreso={
+            puedeRegistrarIngresos
+          }
+          puedeRegistrarEgreso={
+            puedeRegistrarEgresos
+          }
           alGuardar={guardarMovimiento}
           alCancelar={() =>
             setModalMovimiento(false)

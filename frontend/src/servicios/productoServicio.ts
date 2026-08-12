@@ -23,9 +23,12 @@ const productosIniciales:
       "Carne, queso, lechuga, tomate y salsa de la casa.",
     categoriaId: 1,
     precio: 25,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: true,
+    modoPreparacion: "Requiere preparación",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -41,9 +44,12 @@ const productosIniciales:
       "Doble carne, doble queso, vegetales y salsa especial.",
     categoriaId: 1,
     precio: 35,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: true,
+    modoPreparacion: "Requiere preparación",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -59,9 +65,12 @@ const productosIniciales:
       "Pizza familiar con queso, jamón y salsa de tomate.",
     categoriaId: 2,
     precio: 65,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: false,
+    modoPreparacion: "Requiere preparación",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -77,9 +86,12 @@ const productosIniciales:
       "Hamburguesa clásica, papas fritas y bebida personal.",
     categoriaId: 3,
     precio: 38,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: true,
+    modoPreparacion: "Requiere preparación",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -95,9 +107,12 @@ const productosIniciales:
       "Bebida gaseosa personal de 500 mililitros.",
     categoriaId: 4,
     precio: 10,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: false,
+    modoPreparacion: "Entrega directa",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -113,9 +128,12 @@ const productosIniciales:
       "Porción individual de papas fritas.",
     categoriaId: 5,
     precio: 12,
+    disponiblePedidosYa: false,
+    precioPedidosYa: null,
     estado: "Activo",
     disponible: true,
     destacado: false,
+    modoPreparacion: "Requiere preparación",
     controlInventario: "Con receta",
     imagenUrl: null,
     fechaRegistro:
@@ -143,6 +161,19 @@ function normalizarProducto(
     ...producto,
     disponible:
       producto.estado === "Activo",
+    disponiblePedidosYa:
+      producto.disponiblePedidosYa === true &&
+      Number.isFinite(producto.precioPedidosYa) &&
+      Number(producto.precioPedidosYa) > 0,
+    precioPedidosYa:
+      Number.isFinite(producto.precioPedidosYa) &&
+      Number(producto.precioPedidosYa) > 0
+        ? Number(Number(producto.precioPedidosYa).toFixed(2))
+        : null,
+    modoPreparacion:
+      producto.modoPreparacion === "Entrega directa"
+        ? "Entrega directa"
+        : "Requiere preparación",
     controlInventario:
       producto.controlInventario ??
       "Con receta",
@@ -331,6 +362,31 @@ function validarDatosProducto(
   }
 }
 
+function validarConfiguracionPedidosYa(
+  disponiblePedidosYa: boolean,
+  precioPedidosYa: number | null | undefined,
+): number | null {
+  if (!disponiblePedidosYa) {
+    return null;
+  }
+
+  const precio = Number(precioPedidosYa);
+
+  if (!Number.isFinite(precio) || precio <= 0) {
+    throw new Error(
+      "Ingresa un precio válido para PedidosYa cuando el producto esté disponible en ese canal.",
+    );
+  }
+
+  if (precio > 100000) {
+    throw new Error(
+      "El precio de PedidosYa supera el límite permitido.",
+    );
+  }
+
+  return Number(precio.toFixed(2));
+}
+
 async function validarCategoriaActiva(
   categoriaId: number,
 ): Promise<void> {
@@ -405,6 +461,12 @@ export async function crearProducto(
     datos.precio,
   );
 
+  const precioPedidosYa =
+    validarConfiguracionPedidosYa(
+      datos.disponiblePedidosYa === true,
+      datos.precioPedidosYa,
+    );
+
   await validarCategoriaActiva(
     datos.categoriaId,
   );
@@ -444,10 +506,16 @@ export async function crearProducto(
     precio: Number(
       datos.precio.toFixed(2),
     ),
+    disponiblePedidosYa:
+      datos.disponiblePedidosYa === true,
+    precioPedidosYa,
     estado: "Activo",
     disponible: true,
     destacado:
       datos.destacado,
+    modoPreparacion:
+      datos.modoPreparacion ??
+      "Requiere preparación",
     controlInventario:
       datos.controlInventario ??
       "Con receta",
@@ -511,6 +579,12 @@ export async function actualizarProducto(
     datos.precio,
   );
 
+  const precioPedidosYa =
+    validarConfiguracionPedidosYa(
+      datos.disponiblePedidosYa === true,
+      datos.precioPedidosYa,
+    );
+
   const categoriaSeleccionada =
     await obtenerCategoriaPorId(
       datos.categoriaId,
@@ -563,6 +637,9 @@ export async function actualizarProducto(
     precio: Number(
       datos.precio.toFixed(2),
     ),
+    disponiblePedidosYa:
+      datos.disponiblePedidosYa === true,
+    precioPedidosYa,
     disponible:
       productoActual.estado ===
       "Activo",
@@ -571,6 +648,10 @@ export async function actualizarProducto(
       "Activo"
         ? datos.destacado
         : false,
+    modoPreparacion:
+      datos.modoPreparacion ??
+      productoActual.modoPreparacion ??
+      "Requiere preparación",
     controlInventario:
       datos.controlInventario ??
       productoActual.controlInventario ??

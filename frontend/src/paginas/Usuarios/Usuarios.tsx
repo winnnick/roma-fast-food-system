@@ -151,10 +151,18 @@ function obtenerVisualUsuario(
     };
   }
 
+  if (usuario.roles.includes("Inventario")) {
+    return {
+      icono: Boxes,
+      contenedor:
+        "bg-amber-100 text-amber-700 dark:bg-amber-950/55 dark:text-amber-300",
+    };
+  }
+
   return {
-    icono: Boxes,
+    icono: UserCheck,
     contenedor:
-      "bg-amber-100 text-amber-700 dark:bg-amber-950/55 dark:text-amber-300",
+      "bg-teal-100 text-teal-700 dark:bg-teal-950/55 dark:text-teal-300",
   };
 }
 
@@ -169,7 +177,11 @@ function clasesRol(
     return "bg-blue-50 text-blue-700 dark:bg-blue-950/45 dark:text-blue-300";
   }
 
-  return "bg-amber-50 text-amber-700 dark:bg-amber-950/45 dark:text-amber-300";
+  if (rol === "Inventario") {
+    return "bg-amber-50 text-amber-700 dark:bg-amber-950/45 dark:text-amber-300";
+  }
+
+  return "bg-teal-50 text-teal-700 dark:bg-teal-950/45 dark:text-teal-300";
 }
 
 function Usuarios() {
@@ -408,7 +420,7 @@ function Usuarios() {
           entidadId:
             usuarioActualizado.id,
           descripcion:
-            `Se actualizó la cuenta de ${usuarioActualizado.nombreCompleto} con ${usuarioActualizado.roles.length > 1 ? "los roles" : "el rol"} ${usuarioActualizado.roles.join(" + ")}.`,
+            `Se actualizó la cuenta de ${usuarioActualizado.nombreCompleto} con el rol principal ${usuarioActualizado.rol}.`,
           datosAnteriores:
             usuarioSeleccionado,
           datosPosteriores:
@@ -419,7 +431,7 @@ function Usuarios() {
           tipo: "exito",
           titulo: "Usuario actualizado",
           mensaje:
-            "La información y los roles fueron actualizados correctamente.",
+            "La información y el rol principal fueron actualizados correctamente.",
         });
       } else {
         const usuarioCreado =
@@ -434,7 +446,7 @@ function Usuarios() {
           entidadId:
             usuarioCreado.id,
           descripcion:
-            `Se creó la cuenta de ${usuarioCreado.nombreCompleto} con ${usuarioCreado.roles.length > 1 ? "los roles" : "el rol"} ${usuarioCreado.roles.join(" + ")}.`,
+            `Se creó la cuenta de ${usuarioCreado.nombreCompleto} con el rol principal ${usuarioCreado.rol}.`,
           datosPosteriores:
             usuarioCreado,
         });
@@ -561,7 +573,7 @@ function Usuarios() {
           ))}
         </div>
 
-        <div className="h-[33rem] rounded-3xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-132 rounded-3xl bg-slate-200 dark:bg-slate-800" />
       </div>
     );
   }
@@ -645,7 +657,7 @@ function Usuarios() {
             </div>
 
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Administra cuentas y combina roles operativos sin configurar permisos usuario por usuario.
+              Administra cuentas y su rol principal. Los roles adicionales y permisos especiales se gestionan en Roles y permisos.
             </p>
           </div>
 
@@ -704,6 +716,9 @@ function Usuarios() {
               <option value="Inventario">
                 Inventario
               </option>
+              <option value="Auxiliar">
+                Auxiliar
+              </option>
             </select>
 
             <select
@@ -755,9 +770,9 @@ function Usuarios() {
           </div>
         </div>
 
-        <div className="min-h-[22rem]">
+        <div className="min-h-88">
           {usuariosPagina.length === 0 ? (
-            <div className="flex min-h-[22rem] flex-col items-center justify-center px-6 text-center">
+            <div className="flex min-h-88 flex-col items-center justify-center px-6 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                 <Search size={22} />
               </div>
@@ -953,8 +968,8 @@ function Usuarios() {
         }
         descripcion={
           usuarioSeleccionado
-            ? "Actualice los datos de acceso y los roles operativos de la cuenta."
-            : "Cree una cuenta y asigne uno o varios roles operativos."
+            ? "Actualice los datos de acceso y el rol principal de la cuenta."
+            : "Cree una cuenta y asigne su rol principal."
         }
         ancho="grande"
         alCerrar={cerrarFormulario}

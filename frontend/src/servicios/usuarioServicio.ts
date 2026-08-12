@@ -4,19 +4,34 @@ import {
 } from "../tipos/auth";
 
 import type {
+  ActualizarAccesosUsuarioDto,
   ActualizarUsuarioDto,
   CrearUsuarioDto,
   EstadoUsuario,
   Usuario,
 } from "../tipos/usuario";
 
+import {
+  permisosSistema,
+  type PermisoSistema,
+} from "../tipos/rol";
+
+import {
+  normalizarPermisosConDependencias,
+  obtenerPermisosRoles,
+} from "./rolServicio";
+
 interface UsuarioPersistido extends Usuario {
   password: string;
 }
 
 interface UsuarioPersistidoLegado
-  extends Omit<UsuarioPersistido, "roles"> {
+  extends Omit<
+    UsuarioPersistido,
+    "roles" | "permisosAdicionales"
+  > {
   roles?: RolUsuario[];
+  permisosAdicionales?: unknown;
 }
 
 const CLAVE_USUARIOS = "roma-usuarios";
@@ -29,6 +44,7 @@ const usuariosIniciales: UsuarioPersistido[] = [
     nombreCompleto: "Administrador General",
     rol: "Administrador",
     roles: ["Administrador"],
+    permisosAdicionales: [],
     estado: "Activo",
     fechaRegistro: "2026-06-23T10:00:00.000Z",
     ultimoAcceso: null,
@@ -40,6 +56,7 @@ const usuariosIniciales: UsuarioPersistido[] = [
     nombreCompleto: "Carlos Pérez",
     rol: "Cajero",
     roles: ["Cajero"],
+    permisosAdicionales: [],
     estado: "Activo",
     fechaRegistro: "2026-06-24T11:30:00.000Z",
     ultimoAcceso: null,
@@ -51,6 +68,7 @@ const usuariosIniciales: UsuarioPersistido[] = [
     nombreCompleto: "Luis Gómez",
     rol: "Inventario",
     roles: ["Inventario"],
+    permisosAdicionales: [],
     estado: "Activo",
     fechaRegistro: "2026-06-25T09:45:00.000Z",
     ultimoAcceso: null,
@@ -62,6 +80,7 @@ const usuariosIniciales: UsuarioPersistido[] = [
     nombreCompleto: "María Vargas",
     rol: "Cajero",
     roles: ["Cajero"],
+    permisosAdicionales: [],
     estado: "Activo",
     fechaRegistro: "2026-06-26T14:10:00.000Z",
     ultimoAcceso: "2026-07-14T23:20:00.000Z",
@@ -73,6 +92,7 @@ const usuariosIniciales: UsuarioPersistido[] = [
     nombreCompleto: "Pedro Martínez",
     rol: "Inventario",
     roles: ["Inventario"],
+    permisosAdicionales: [],
     estado: "Inactivo",
     fechaRegistro: "2026-06-27T12:00:00.000Z",
     ultimoAcceso: "2026-07-02T20:10:00.000Z",
@@ -101,7 +121,7 @@ function esRolUsuario(
 /**
  * Administrador se conserva como rol exclusivo porque ya
  * concede todos los permisos. Para empleados se admite la
- * combinación Cajero + Inventario.
+ * combinación de Cajero, Inventario y Auxiliar.
  */
 export function normalizarRolesUsuario(
   roles: readonly RolUsuario[],
@@ -128,16 +148,53 @@ export function normalizarRolesUsuario(
 
 export function obtenerRolPrincipalUsuario(
   roles: readonly RolUsuario[],
+  rolPreferido?: RolUsuario,
 ): RolUsuario {
   if (roles.includes("Administrador")) {
     return "Administrador";
+  }
+
+  if (
+    rolPreferido &&
+    rolPreferido !== "Administrador" &&
+    roles.includes(rolPreferido)
+  ) {
+    return rolPreferido;
   }
 
   if (roles.includes("Cajero")) {
     return "Cajero";
   }
 
-  return "Inventario";
+  if (roles.includes("Inventario")) {
+    return "Inventario";
+  }
+
+  return "Auxiliar";
+}
+
+function normalizarPermisosAdicionales(
+  permisosEntrada: unknown,
+): PermisoSistema[] {
+  const permisos = Array.isArray(
+    permisosEntrada,
+  )
+    ? permisosEntrada.filter(
+        (permiso): permiso is PermisoSistema =>
+          typeof permiso === "string" &&
+          permisosSistema.includes(
+            permiso as PermisoSistema,
+          ) &&
+          permiso !== "ROLES_GESTIONAR",
+      )
+    : [];
+
+  return normalizarPermisosConDependencias(
+    permisos,
+  ).filter(
+    (permiso) =>
+      permiso !== "ROLES_GESTIONAR",
+  );
 }
 
 function normalizarUsuarioPersistido(
@@ -156,8 +213,17 @@ function normalizarUsuarioPersistido(
 
   return {
     ...usuario,
-    rol: obtenerRolPrincipalUsuario(roles),
+    rol: obtenerRolPrincipalUsuario(
+      roles,
+      rolLegado,
+    ),
     roles,
+    permisosAdicionales:
+      roles.includes("Administrador")
+        ? []
+        : normalizarPermisosAdicionales(
+            usuario.permisosAdicionales,
+          ),
   };
 }
 
@@ -220,6 +286,9 @@ function quitarPassword(
     nombreCompleto: usuario.nombreCompleto,
     rol: usuario.rol,
     roles: [...usuario.roles],
+    permisosAdicionales: [
+      ...usuario.permisosAdicionales,
+    ],
     estado: usuario.estado,
     fechaRegistro: usuario.fechaRegistro,
     ultimoAcceso: usuario.ultimoAcceso,
@@ -338,8 +407,12 @@ export async function crearUsuario(
     password: datos.password,
     nombreCompleto:
       datos.nombreCompleto.trim(),
-    rol: obtenerRolPrincipalUsuario(roles),
+    rol: obtenerRolPrincipalUsuario(
+      roles,
+      datos.rol,
+    ),
     roles,
+    permisosAdicionales: [],
     estado: "Activo",
     fechaRegistro: new Date().toISOString(),
     ultimoAcceso: null,
@@ -400,6 +473,23 @@ export async function actualizarUsuario(
     );
   }
 
+  const permisosHeredados =
+    await obtenerPermisosRoles(
+      nuevosRoles,
+    );
+
+  const permisosAdicionales =
+    nuevosRoles.includes(
+      "Administrador",
+    )
+      ? []
+      : usuarioActual.permisosAdicionales.filter(
+          (permiso) =>
+            !permisosHeredados.includes(
+              permiso,
+            ),
+        );
+
   const usuarioActualizado: UsuarioPersistido = {
     ...usuarioActual,
     username: datos.username.trim(),
@@ -407,12 +497,97 @@ export async function actualizarUsuario(
       datos.nombreCompleto.trim(),
     rol: obtenerRolPrincipalUsuario(
       nuevosRoles,
+      datos.rol,
     ),
     roles: nuevosRoles,
+    permisosAdicionales,
     password:
       datos.password?.trim()
         ? datos.password
         : usuarioActual.password,
+  };
+
+  usuarios[indiceUsuario] =
+    usuarioActualizado;
+
+  guardarUsuarios(usuarios);
+
+  return quitarPassword(
+    usuarioActualizado,
+  );
+}
+
+export async function actualizarAccesosUsuario(
+  id: number,
+  datos: ActualizarAccesosUsuarioDto,
+): Promise<Usuario> {
+  await esperar(650);
+
+  const usuarios =
+    obtenerUsuariosPersistidos();
+
+  const indiceUsuario =
+    usuarios.findIndex(
+      (usuario) => usuario.id === id,
+    );
+
+  if (indiceUsuario === -1) {
+    throw new Error(
+      "El usuario seleccionado no existe.",
+    );
+  }
+
+  const usuarioActual =
+    usuarios[indiceUsuario];
+
+  if (
+    usuarioActual.roles.includes(
+      "Administrador",
+    )
+  ) {
+    throw new Error(
+      "El acceso del Administrador es completo y no requiere permisos adicionales.",
+    );
+  }
+
+  const rolesSolicitados =
+    normalizarRolesUsuario(
+      datos.roles.filter(
+        (rol) => rol !== "Administrador",
+      ),
+      usuarioActual.rol,
+    );
+
+  const roles = rolesSolicitados.includes(
+    usuarioActual.rol,
+  )
+    ? rolesSolicitados
+    : normalizarRolesUsuario(
+        [
+          usuarioActual.rol,
+          ...rolesSolicitados,
+        ],
+        usuarioActual.rol,
+      );
+
+  const permisosHeredados =
+    await obtenerPermisosRoles(roles);
+
+  const permisosAdicionales =
+    normalizarPermisosAdicionales(
+      datos.permisosAdicionales,
+    ).filter(
+      (permiso) =>
+        !permisosHeredados.includes(
+          permiso,
+        ),
+    );
+
+  const usuarioActualizado: UsuarioPersistido = {
+    ...usuarioActual,
+    rol: usuarioActual.rol,
+    roles,
+    permisosAdicionales,
   };
 
   usuarios[indiceUsuario] =

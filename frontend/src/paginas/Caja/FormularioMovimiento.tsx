@@ -15,6 +15,8 @@ import type {
 
 interface FormularioMovimientoProps {
   cargando: boolean;
+  puedeRegistrarIngreso: boolean;
+  puedeRegistrarEgreso: boolean;
 
   alGuardar: (
     datos: RegistrarMovimientoManualDto,
@@ -25,12 +27,16 @@ interface FormularioMovimientoProps {
 
 function FormularioMovimiento({
   cargando,
+  puedeRegistrarIngreso,
+  puedeRegistrarEgreso,
   alGuardar,
   alCancelar,
 }: FormularioMovimientoProps) {
   const [tipo, setTipo] =
     useState<"Ingreso" | "Egreso">(
-      "Ingreso",
+      puedeRegistrarIngreso
+        ? "Ingreso"
+        : "Egreso",
     );
 
   const [concepto, setConcepto] =
@@ -43,6 +49,15 @@ function FormularioMovimiento({
     evento: FormEvent<HTMLFormElement>,
   ) {
     evento.preventDefault();
+
+    const permitido =
+      tipo === "Ingreso"
+        ? puedeRegistrarIngreso
+        : puedeRegistrarEgreso;
+
+    if (!permitido) {
+      return;
+    }
 
     await alGuardar({
       tipo,
@@ -58,44 +73,55 @@ function FormularioMovimiento({
       className="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100"
     >
       <div className="space-y-4 p-5 sm:p-6">
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={cargando}
-            onClick={() =>
-              setTipo("Ingreso")
-            }
-            className={`
-              flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors disabled:opacity-50
-              ${
-                tipo === "Ingreso"
-                  ? "border-emerald-600 bg-emerald-600 text-white"
-                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+        <div
+          className={`grid gap-2 ${
+            puedeRegistrarIngreso &&
+            puedeRegistrarEgreso
+              ? "grid-cols-2"
+              : "grid-cols-1"
+          }`}
+        >
+          {puedeRegistrarIngreso && (
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() =>
+                setTipo("Ingreso")
               }
-            `}
-          >
-            <ArrowUpCircle size={18} />
-            Ingreso
-          </button>
+              className={`
+                flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors disabled:opacity-50
+                ${
+                  tipo === "Ingreso"
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }
+              `}
+            >
+              <ArrowUpCircle size={18} />
+              Ingreso
+            </button>
+          )}
 
-          <button
-            type="button"
-            disabled={cargando}
-            onClick={() =>
-              setTipo("Egreso")
-            }
-            className={`
-              flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors disabled:opacity-50
-              ${
-                tipo === "Egreso"
-                  ? "border-red-600 bg-red-600 text-white"
-                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+          {puedeRegistrarEgreso && (
+            <button
+              type="button"
+              disabled={cargando}
+              onClick={() =>
+                setTipo("Egreso")
               }
-            `}
-          >
-            <ArrowDownCircle size={18} />
-            Egreso
-          </button>
+              className={`
+                flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-black transition-colors disabled:opacity-50
+                ${
+                  tipo === "Egreso"
+                    ? "border-red-600 bg-red-600 text-white"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }
+              `}
+            >
+              <ArrowDownCircle size={18} />
+              Egreso
+            </button>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">

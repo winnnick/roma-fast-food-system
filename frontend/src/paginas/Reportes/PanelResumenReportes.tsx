@@ -1,18 +1,15 @@
 import {
-  AlertTriangle,
-  Banknote,
   Boxes,
-  CircleDollarSign,
-  Clock3,
-  CreditCard,
+  Check,
+  CircleAlert,
   ReceiptText,
-  Scale,
-  ShoppingBag,
-  TrendingDown,
+  UsersRound,
   WalletCards,
 } from "lucide-react";
 
-import TarjetaMetrica from "../../shared/ui/TarjetaMetrica";
+import {
+  useState,
+} from "react";
 
 import type {
   PanelAdministrativo,
@@ -27,9 +24,14 @@ interface PanelResumenReportesProps {
   conciliacion: ResumenConciliacionCaja;
 }
 
-function formatearMoneda(
-  valor: number,
-): string {
+interface FilaLectura {
+  etiqueta: string;
+  valor: string;
+  detalle?: string;
+  alerta?: boolean;
+}
+
+function moneda(valor: number): string {
   return `Bs ${new Intl.NumberFormat(
     "es-BO",
     {
@@ -39,781 +41,624 @@ function formatearMoneda(
   ).format(valor)}`;
 }
 
-function formatearPorcentaje(
-  valor: number,
-): string {
-  return `${new Intl.NumberFormat(
+function numero(valor: number): string {
+  return new Intl.NumberFormat(
     "es-BO",
-    {
-      maximumFractionDigits: 1,
-    },
-  ).format(valor)}%`;
+  ).format(valor);
+}
+
+function SeccionGerencial({
+  titulo,
+  descripcion,
+  icono: Icono,
+  filas,
+}: {
+  titulo: string;
+  descripcion: string;
+  icono: typeof ReceiptText;
+  filas: FilaLectura[];
+}) {
+  return (
+    <article
+      className="
+        overflow-hidden rounded-2xl
+        border border-slate-200
+        bg-white shadow-panel
+        dark:border-slate-700
+        dark:bg-slate-900
+      "
+    >
+      <header
+        className="
+          flex items-start gap-3
+          border-b border-slate-100
+          px-5 py-4
+          dark:border-slate-800
+        "
+      >
+        <span
+          className="
+            flex h-9 w-9 shrink-0
+            items-center justify-center
+            rounded-lg bg-roma-50
+            text-roma-700
+            dark:bg-roma-950/40
+            dark:text-roma-300
+          "
+        >
+          <Icono size={18} />
+        </span>
+
+        <div className="min-w-0">
+          <h2
+            className="
+              text-sm font-black
+              text-slate-900
+              dark:text-white
+            "
+          >
+            {titulo}
+          </h2>
+
+          <p
+            className="
+              mt-0.5 text-xs
+              leading-relaxed
+              text-slate-500
+              dark:text-slate-400
+            "
+          >
+            {descripcion}
+          </p>
+        </div>
+      </header>
+
+      <dl className="divide-y divide-slate-100 dark:divide-slate-800">
+        {filas.map((fila) => (
+          <div
+            key={fila.etiqueta}
+            className="
+              grid gap-1 px-5 py-3
+              sm:grid-cols-[minmax(0,1fr)_auto]
+              sm:items-center sm:gap-5
+            "
+          >
+            <div className="min-w-0">
+              <dt
+                className="
+                  text-xs font-bold
+                  text-slate-600
+                  dark:text-slate-300
+                "
+              >
+                {fila.etiqueta}
+              </dt>
+
+              {fila.detalle && (
+                <p
+                  className="
+                    mt-0.5 text-[11px]
+                    leading-relaxed
+                    text-slate-400
+                    dark:text-slate-500
+                  "
+                >
+                  {fila.detalle}
+                </p>
+              )}
+            </div>
+
+            <dd
+              className={`
+                text-sm font-black
+                sm:text-right
+                ${
+                  fila.alerta
+                    ? "text-amber-700 dark:text-amber-300"
+                    : "text-slate-900 dark:text-white"
+                }
+              `}
+            >
+              {fila.valor}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  );
 }
 
 function PanelResumenReportes({
   panel,
   conciliacion,
 }: PanelResumenReportesProps) {
-  const totalAlertasInventario =
-    panel.inventario.insumosStockBajo +
-    panel.inventario.insumosStockNegativo;
+  const [hallazgosRevisados, setHallazgosRevisados] =
+    useState<string[]>(() => {
+      try {
+        const guardados = localStorage.getItem(
+          "roma-reportes-hallazgos-revisados",
+        );
 
-  const metodosPago =
+        if (!guardados) {
+          return [];
+        }
+
+        const datos = JSON.parse(guardados);
+
+        return Array.isArray(datos)
+          ? datos.filter(
+              (item): item is string =>
+                typeof item === "string",
+            )
+          : [];
+      } catch {
+        return [];
+      }
+    });
+
+  const efectivo =
     panel.metodosPago.reduce(
-      (acumulado, metodo) => ({
-        efectivo:
-          acumulado.efectivo +
-          metodo.montoEfectivo,
-        qr:
-          acumulado.qr +
-          metodo.montoQr,
-      }),
-      {
-        efectivo: 0,
-        qr: 0,
-      },
+      (total, metodo) =>
+        total + metodo.montoEfectivo,
+      0,
+    );
+
+  const qr = panel.metodosPago.reduce(
+    (total, metodo) =>
+      total + metodo.montoQr,
+    0,
+  );
+
+  const actividadOrdenada = [
+    ...panel.actividadPorUsuario,
+  ].sort(
+    (a, b) =>
+      b.totalAcciones - a.totalAcciones,
+  );
+
+  const usuarioMasActivo =
+    actividadOrdenada[0] ?? null;
+
+  const totalAcciones =
+    panel.actividadPorUsuario.reduce(
+      (total, usuario) =>
+        total + usuario.totalAcciones,
+      0,
+    );
+
+  const hallazgos: Array<{
+    titulo: string;
+    detalle: string;
+    nivel: "normal" | "atencion";
+  }> = [];
+
+  if (
+    panel.comerciales.pedidosPendientes > 0
+  ) {
+    hallazgos.push({
+      titulo: "Cobros pendientes",
+      detalle:
+        `${panel.comerciales.pedidosPendientes} pedido(s) por ${moneda(panel.comerciales.ventasPendientes)} aún no fueron cobrados.`,
+      nivel: "atencion",
+    });
+  }
+
+  if (
+    conciliacion.sesionesConDiferencias > 0
+  ) {
+    hallazgos.push({
+      titulo: "Diferencias de caja",
+      detalle:
+        `${conciliacion.sesionesConDiferencias} cierre(s) presentan diferencia. Acumulado: ${moneda(conciliacion.diferenciaAcumulada)}.`,
+      nivel: "atencion",
+    });
+  }
+
+  if (
+    panel.inventario.insumosStockNegativo > 0
+  ) {
+    hallazgos.push({
+      titulo: "Existencias negativas",
+      detalle:
+        `${panel.inventario.insumosStockNegativo} insumo(s) requieren regularización inmediata.`,
+      nivel: "atencion",
+    });
+  }
+
+  if (
+    panel.inventario.insumosStockBajo > 0
+  ) {
+    hallazgos.push({
+      titulo: "Stock por debajo del mínimo",
+      detalle:
+        `${panel.inventario.insumosStockBajo} insumo(s) se encuentran en nivel bajo.`,
+      nivel: "atencion",
+    });
+  }
+
+  if (
+    panel.inventario.productosActivosSinReceta >
+    0
+  ) {
+    hallazgos.push({
+      titulo: "Productos sin receta",
+      detalle:
+        `${panel.inventario.productosActivosSinReceta} producto(s) activo(s) no tienen receta configurada para controlar consumo automático.`,
+      nivel: "atencion",
+    });
+  }
+
+  const claveHallazgo = (
+    titulo: string,
+    detalle: string,
+  ) => `${titulo}::${detalle}`;
+
+  const hallazgosVisibles =
+    hallazgos.filter((hallazgo) => {
+      if (hallazgo.nivel === "normal") {
+        return true;
+      }
+
+      return !hallazgosRevisados.includes(
+        claveHallazgo(
+          hallazgo.titulo,
+          hallazgo.detalle,
+        ),
+      );
+    });
+
+  function marcarHallazgoRevisado(
+    titulo: string,
+    detalle: string,
+  ) {
+    const clave = claveHallazgo(
+      titulo,
+      detalle,
+    );
+
+    setHallazgosRevisados((actuales) => {
+      const siguientes = Array.from(
+        new Set([...actuales, clave]),
+      );
+
+      localStorage.setItem(
+        "roma-reportes-hallazgos-revisados",
+        JSON.stringify(siguientes),
+      );
+
+      return siguientes;
+    });
+  }
+
+  const hayHallazgosPendientes =
+    hallazgosVisibles.some(
+      (hallazgo) =>
+        hallazgo.nivel === "atencion",
     );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <section
         className="
-          grid gap-5
-          sm:grid-cols-2
-          xl:grid-cols-4
-        "
-      >
-        <TarjetaMetrica
-          titulo="Ventas netas"
-          valor={formatearMoneda(
-            panel.comerciales.ventasNetas,
-          )}
-          descripcion="Importe cobrado en el periodo"
-          icono={CircleDollarSign}
-          tono="roma"
-          variacion={
-            panel.comerciales
-              .variacionVentas.porcentaje
-          }
-        />
-
-        <TarjetaMetrica
-          titulo="Pedidos registrados"
-          valor={String(
-            panel.comerciales
-              .pedidosRegistrados,
-          )}
-          descripcion={`${panel.comerciales.pedidosCobrados} cobrados`}
-          icono={ReceiptText}
-          tono="azul"
-          variacion={
-            panel.comerciales
-              .variacionPedidos.porcentaje
-          }
-        />
-
-        <TarjetaMetrica
-          titulo="Ticket promedio"
-          valor={formatearMoneda(
-            panel.comerciales.ticketPromedio,
-          )}
-          descripcion="Promedio por pago cobrado"
-          icono={ShoppingBag}
-          tono="verde"
-          variacion={
-            panel.comerciales
-              .variacionTicket.porcentaje
-          }
-        />
-
-        <TarjetaMetrica
-          titulo="Pendiente de cobro"
-          valor={formatearMoneda(
-            panel.comerciales
-              .ventasPendientes,
-          )}
-          descripcion={`${panel.comerciales.pedidosPendientes} pedidos pendientes`}
-          icono={Clock3}
-          tono="ambar"
-        />
-      </section>
-
-      <section
-        className="
-          grid gap-5
-          md:grid-cols-2
-          xl:grid-cols-4
-        "
-      >
-        <article
-          className="
-            rounded-2xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-          "
-        >
-          <div
-            className="
-              flex items-start
-              justify-between gap-3
-            "
-          >
-            <div
-              className="
-                flex h-11 w-11
-                items-center
-                justify-center
-                rounded-xl
-                bg-emerald-100
-                text-emerald-700
-              "
-            >
-              <Banknote size={22} />
-            </div>
-
-            <span
-              className="
-                rounded-full
-                bg-emerald-50
-                px-3 py-1
-                text-xs font-black
-                text-emerald-700
-              "
-            >
-              Efectivo
-            </span>
-          </div>
-
-          <p
-            className="
-              mt-4 text-sm font-bold
-              text-slate-500
-            "
-          >
-            Cobros en efectivo
-          </p>
-
-          <p
-            className="
-              mt-1 text-2xl font-black
-              text-slate-900
-            "
-          >
-            {formatearMoneda(
-              metodosPago.efectivo,
-            )}
-          </p>
-
-          <p
-            className="
-              mt-2 text-xs
-              text-slate-500
-            "
-          >
-            Incluye componentes en efectivo
-            de pagos mixtos.
-          </p>
-        </article>
-
-        <article
-          className="
-            rounded-2xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-          "
-        >
-          <div
-            className="
-              flex items-start
-              justify-between gap-3
-            "
-          >
-            <div
-              className="
-                flex h-11 w-11
-                items-center
-                justify-center
-                rounded-xl
-                bg-blue-100
-                text-blue-700
-              "
-            >
-              <CreditCard size={22} />
-            </div>
-
-            <span
-              className="
-                rounded-full
-                bg-blue-50 px-3 py-1
-                text-xs font-black
-                text-blue-700
-              "
-            >
-              QR
-            </span>
-          </div>
-
-          <p
-            className="
-              mt-4 text-sm font-bold
-              text-slate-500
-            "
-          >
-            Cobros mediante QR
-          </p>
-
-          <p
-            className="
-              mt-1 text-2xl font-black
-              text-slate-900
-            "
-          >
-            {formatearMoneda(
-              metodosPago.qr,
-            )}
-          </p>
-
-          <p
-            className="
-              mt-2 text-xs
-              text-slate-500
-            "
-          >
-            Incluye componentes QR de pagos
-            mixtos.
-          </p>
-        </article>
-
-        <article
-          className="
-            rounded-2xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-          "
-        >
-          <div
-            className="
-              flex items-start
-              justify-between gap-3
-            "
-          >
-            <div
-              className="
-                flex h-11 w-11
-                items-center
-                justify-center
-                rounded-xl
-                bg-amber-100
-                text-amber-700
-              "
-            >
-              <Boxes size={22} />
-            </div>
-
-            <span
-              className={`
-                rounded-full px-3 py-1
-                text-xs font-black
-                ${
-                  totalAlertasInventario > 0
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-emerald-50 text-emerald-700"
-                }
-              `}
-            >
-              {totalAlertasInventario} alertas
-            </span>
-          </div>
-
-          <p
-            className="
-              mt-4 text-sm font-bold
-              text-slate-500
-            "
-          >
-            Estado del inventario
-          </p>
-
-          <p
-            className="
-              mt-1 text-2xl font-black
-              text-slate-900
-            "
-          >
-            {
-              panel.inventario
-                .insumosStockNegativo
-            }{" "}
-            negativos
-          </p>
-
-          <p
-            className="
-              mt-2 text-xs
-              text-slate-500
-            "
-          >
-            {
-              panel.inventario
-                .insumosStockBajo
-            }{" "}
-            insumos con stock bajo.
-          </p>
-        </article>
-
-        <article
-          className="
-            rounded-2xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-          "
-        >
-          <div
-            className="
-              flex items-start
-              justify-between gap-3
-            "
-          >
-            <div
-              className="
-                flex h-11 w-11
-                items-center
-                justify-center
-                rounded-xl
-                bg-violet-100
-                text-violet-700
-              "
-            >
-              <Scale size={22} />
-            </div>
-
-            <span
-              className="
-                rounded-full
-                bg-violet-50
-                px-3 py-1
-                text-xs font-black
-                text-violet-700
-              "
-            >
-              Cobertura
-            </span>
-          </div>
-
-          <p
-            className="
-              mt-4 text-sm font-bold
-              text-slate-500
-            "
-          >
-            Valoración económica
-          </p>
-
-          <p
-            className="
-              mt-1 text-2xl font-black
-              text-slate-900
-            "
-          >
-            {formatearPorcentaje(
-              panel.inventario
-                .coberturaValoracionPorcentaje,
-            )}
-          </p>
-
-          <p
-            className="
-              mt-2 text-xs
-              text-slate-500
-            "
-          >
-            Costo de consumo valorado:{" "}
-            {formatearMoneda(
-              panel.inventario
-                .costoConsumoValorado,
-            )}
-          </p>
-        </article>
-      </section>
-
-      <section
-        className="
-          grid gap-6
+          grid gap-4
           xl:grid-cols-2
         "
       >
-        <article
-          className="
-            rounded-3xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-            sm:p-6
-          "
-        >
-          <div
-            className="
-              flex items-center gap-2
-            "
-          >
-            <WalletCards
-              size={21}
-              className="text-blue-700"
-            />
+        <SeccionGerencial
+          titulo="Ventas y cobranza"
+          descripcion="Qué se vendió, cuánto se cobró y qué quedó pendiente."
+          icono={ReceiptText}
+          filas={[
+            {
+              etiqueta: "Ventas cobradas",
+              valor: moneda(
+                panel.comerciales.ventasNetas,
+              ),
+              detalle:
+                `${numero(panel.comerciales.pedidosCobrados)} pedidos cobrados de ${numero(panel.comerciales.pedidosRegistrados)} registrados.`,
+            },
+            {
+              etiqueta: "Pendiente de cobro",
+              valor: moneda(
+                panel.comerciales.ventasPendientes,
+              ),
+              detalle:
+                `${numero(panel.comerciales.pedidosPendientes)} pedidos pendientes.`,
+              alerta:
+                panel.comerciales
+                  .pedidosPendientes > 0,
+            },
+            {
+              etiqueta: "Descuentos otorgados",
+              valor: moneda(
+                panel.comerciales
+                  .descuentosOtorgados,
+              ),
+              detalle:
+                `${numero(panel.comerciales.descuentosAplicados)} ventas con descuento.`,
+            },
+            {
+              etiqueta: "Pedidos anulados",
+              valor: numero(
+                panel.comerciales
+                  .pedidosAnulados,
+              ),
+              alerta:
+                panel.comerciales
+                  .pedidosAnulados > 0,
+            },
+          ]}
+        />
 
-            <h2
-              className="
-                text-lg font-black
-                text-slate-900
-              "
-            >
-              Resumen de arqueos
-            </h2>
-          </div>
-
-          <p
-            className="
-              mt-1 text-sm
-              text-slate-500
-            "
-          >
-            Conciliación entre cobros,
-            movimientos y cierres de caja.
-          </p>
-
-          <div
-            className="
-              mt-5 grid gap-3
-              sm:grid-cols-2
-            "
-          >
-            <div
-              className="
-                rounded-2xl bg-slate-50 p-4
-              "
-            >
-              <p
-                className="
-                  text-xs font-bold
-                  uppercase tracking-wide
-                  text-slate-500
-                "
-              >
-                Sesiones conciliadas
-              </p>
-
-              <p
-                className="
-                  mt-1 text-2xl font-black
-                  text-emerald-700
-                "
-              >
-                {
-                  conciliacion
-                    .sesionesConciliadas
-                }
-              </p>
-            </div>
-
-            <div
-              className="
-                rounded-2xl bg-red-50 p-4
-              "
-            >
-              <p
-                className="
-                  text-xs font-bold
-                  uppercase tracking-wide
-                  text-red-600
-                "
-              >
-                Con diferencias
-              </p>
-
-              <p
-                className="
-                  mt-1 text-2xl font-black
-                  text-red-800
-                "
-              >
-                {
-                  conciliacion
-                    .sesionesConDiferencias
-                }
-              </p>
-            </div>
-
-            <div
-              className="
-                rounded-2xl bg-amber-50 p-4
-              "
-            >
-              <p
-                className="
-                  text-xs font-bold
-                  uppercase tracking-wide
-                  text-amber-600
-                "
-              >
-                Días con faltante
-              </p>
-
-              <p
-                className="
-                  mt-1 text-2xl font-black
-                  text-amber-800
-                "
-              >
-                {
-                  conciliacion
-                    .diasConFaltante
-                }
-              </p>
-            </div>
-
-            <div
-              className="
-                rounded-2xl bg-blue-50 p-4
-              "
-            >
-              <p
-                className="
-                  text-xs font-bold
-                  uppercase tracking-wide
-                  text-blue-600
-                "
-              >
-                Diferencia acumulada
-              </p>
-
-              <p
-                className={`
-                  mt-1 text-2xl font-black
-                  ${
-                    conciliacion
-                      .diferenciaAcumulada < 0
-                      ? "text-red-800"
-                      : "text-blue-800"
-                  }
-                `}
-              >
-                {formatearMoneda(
+        <SeccionGerencial
+          titulo="Caja y conciliación"
+          descripcion="Cómo ingresó el dinero y si los cierres cuadraron."
+          icono={WalletCards}
+          filas={[
+            {
+              etiqueta: "Cobros en efectivo",
+              valor: moneda(efectivo),
+            },
+            {
+              etiqueta: "Cobros mediante QR",
+              valor: moneda(qr),
+            },
+            {
+              etiqueta: "Cajas cerradas revisadas",
+              valor: numero(
+                conciliacion.sesionesCerradas,
+              ),
+              detalle:
+                `${numero(conciliacion.sesionesConDiferencias)} con diferencia registrada.`,
+              alerta:
+                conciliacion
+                  .sesionesConDiferencias > 0,
+            },
+            {
+              etiqueta: "Diferencia acumulada",
+              valor: moneda(
+                conciliacion
+                  .diferenciaAcumulada,
+              ),
+              detalle:
+                "Suma de sobrantes y faltantes registrados al cierre.",
+              alerta:
+                Math.abs(
                   conciliacion
                     .diferenciaAcumulada,
-                )}
-              </p>
-            </div>
-          </div>
-        </article>
+                ) > 0.009,
+            },
+          ]}
+        />
 
-        <article
+        <SeccionGerencial
+          titulo="Inventario y abastecimiento"
+          descripcion="Existencias que requieren atención y costo registrado del movimiento."
+          icono={Boxes}
+          filas={[
+            {
+              etiqueta: "Insumos con stock bajo",
+              valor: numero(
+                panel.inventario
+                  .insumosStockBajo,
+              ),
+              alerta:
+                panel.inventario
+                  .insumosStockBajo > 0,
+            },
+            {
+              etiqueta: "Insumos con stock negativo",
+              valor: numero(
+                panel.inventario
+                  .insumosStockNegativo,
+              ),
+              alerta:
+                panel.inventario
+                  .insumosStockNegativo > 0,
+            },
+            {
+              etiqueta: "Costo de insumos consumidos",
+              valor: moneda(
+                panel.inventario
+                  .costoConsumoValorado,
+              ),
+              detalle:
+                "Costo registrado de los consumos que cuentan con valoración.",
+            },
+            {
+              etiqueta: "Valor estimado del stock disponible",
+              valor: moneda(
+                panel.inventario
+                  .valorInventarioPositivo,
+              ),
+              detalle:
+                "Valor de existencias positivas según el costo registrado.",
+            },
+          ]}
+        />
+
+        <SeccionGerencial
+          titulo="Control operativo"
+          descripcion="Quién operó el sistema y qué tan trazable fue la actividad del periodo."
+          icono={UsersRound}
+          filas={[
+            {
+              etiqueta: "Usuarios con actividad",
+              valor: numero(
+                panel.actividadPorUsuario.length,
+              ),
+            },
+            {
+              etiqueta: "Acciones registradas",
+              valor: numero(totalAcciones),
+              detalle:
+                "Ventas, cobros, caja, inventario y eventos registrados por usuario.",
+            },
+            {
+              etiqueta: "Usuario con mayor actividad",
+              valor:
+                usuarioMasActivo?.usuarioNombre ??
+                "Sin actividad",
+              detalle: usuarioMasActivo
+                ? `${numero(usuarioMasActivo.totalAcciones)} acciones registradas.`
+                : undefined,
+            },
+          ]}
+        />
+      </section>
+
+      <section
+        className="
+          overflow-hidden rounded-2xl
+          border border-slate-200
+          bg-white shadow-panel
+          dark:border-slate-700
+          dark:bg-slate-900
+        "
+      >
+        <header
           className="
-            rounded-3xl border
-            border-slate-200
-            bg-white p-5
-            shadow-panel
-            sm:p-6
+            flex items-center gap-3
+            border-b border-slate-100
+            px-5 py-4
+            dark:border-slate-800
           "
         >
-          <div
+          <span
             className="
-              flex items-center gap-2
+              flex h-9 w-9 items-center
+              justify-center rounded-lg
+              bg-amber-50 text-amber-700
+              dark:bg-amber-950/30
+              dark:text-amber-300
             "
           >
-            <AlertTriangle
-              size={21}
-              className="text-amber-700"
-            />
+            <CircleAlert size={18} />
+          </span>
 
+          <div>
             <h2
               className="
-                text-lg font-black
+                text-sm font-black
                 text-slate-900
+                dark:text-white
               "
             >
-              Riesgos administrativos
+              Situaciones que requieren revisión
             </h2>
+            <p
+              className="
+                mt-0.5 text-xs
+                text-slate-500
+                dark:text-slate-400
+              "
+            >
+              Prioriza lo que necesita una decisión administrativa.
+            </p>
           </div>
+        </header>
 
-          <p
-            className="
-              mt-1 text-sm
-              text-slate-500
-            "
-          >
-            Indicadores que requieren
-            seguimiento del administrador.
-          </p>
-
-          <div className="mt-5 space-y-3">
-            <div
-              className="
-                flex items-center
-                justify-between gap-4
-                rounded-2xl
-                bg-slate-50 p-4
-              "
-            >
-              <div
-                className="
-                  flex items-center gap-3
-                "
-              >
-                <TrendingDown
-                  size={19}
-                  className="text-red-700"
-                />
-
-                <span
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {hayHallazgosPendientes ? (
+            hallazgosVisibles
+              .filter(
+                (hallazgo) =>
+                  hallazgo.nivel ===
+                  "atencion",
+              )
+              .map((hallazgo) => (
+                <div
+                  key={claveHallazgo(
+                    hallazgo.titulo,
+                    hallazgo.detalle,
+                  )}
                   className="
-                    text-sm font-bold
-                    text-slate-700
+                    flex items-start
+                    justify-between gap-4
+                    px-5 py-3
+                    transition-colors
+                    hover:bg-slate-50/80
+                    dark:hover:bg-slate-800/40
                   "
                 >
-                  Pedidos anulados
-                </span>
-              </div>
+                  <div className="min-w-0">
+                    <p
+                      className="
+                        text-xs font-black
+                        text-slate-800
+                        dark:text-slate-100
+                      "
+                    >
+                      {hallazgo.titulo}
+                    </p>
+                    <p
+                      className="
+                        mt-0.5 text-xs
+                        leading-relaxed
+                        text-slate-500
+                        dark:text-slate-400
+                      "
+                    >
+                      {hallazgo.detalle}
+                    </p>
+                  </div>
 
-              <span
+                  <button
+                    type="button"
+                    onClick={() =>
+                      marcarHallazgoRevisado(
+                        hallazgo.titulo,
+                        hallazgo.detalle,
+                      )
+                    }
+                    className="
+                      inline-flex h-8 w-8
+                      shrink-0 items-center
+                      justify-center rounded-lg
+                      border border-emerald-200
+                      bg-emerald-50
+                      text-emerald-700
+                      transition
+                      hover:-translate-y-0.5
+                      hover:bg-emerald-100
+                      focus-visible:outline-none
+                      focus-visible:ring-2
+                      focus-visible:ring-emerald-500
+                      dark:border-emerald-900
+                      dark:bg-emerald-950/30
+                      dark:text-emerald-300
+                      dark:hover:bg-emerald-950/60
+                    "
+                    title="Marcar como revisada"
+                    aria-label={`Marcar ${hallazgo.titulo} como revisada`}
+                  >
+                    <Check size={16} />
+                  </button>
+                </div>
+              ))
+          ) : (
+            <div className="px-5 py-4">
+              <p
                 className="
-                  font-black text-red-700
+                  text-xs font-bold
+                  text-slate-700
+                  dark:text-slate-200
                 "
               >
-                {
-                  panel.comerciales
-                    .pedidosAnulados
-                }
-              </span>
+                No hay situaciones pendientes de revisión.
+              </p>
+              <p
+                className="
+                  mt-0.5 text-xs
+                  text-slate-500
+                  dark:text-slate-400
+                "
+              >
+                Las situaciones revisadas se ocultan de esta lista; si cambia el estado que las originó, volverán a aparecer con la información actualizada.
+              </p>
             </div>
-
-            <div
-              className="
-                flex items-center
-                justify-between gap-4
-                rounded-2xl
-                bg-slate-50 p-4
-              "
-            >
-              <div
-                className="
-                  flex items-center gap-3
-                "
-              >
-                <ReceiptText
-                  size={19}
-                  className="text-amber-700"
-                />
-
-                <span
-                  className="
-                    text-sm font-bold
-                    text-slate-700
-                  "
-                >
-                  Descuentos otorgados
-                </span>
-              </div>
-
-              <span
-                className="
-                  font-black
-                  text-amber-700
-                "
-              >
-                {formatearMoneda(
-                  panel.comerciales
-                    .descuentosOtorgados,
-                )}
-              </span>
-            </div>
-
-            <div
-              className="
-                flex items-center
-                justify-between gap-4
-                rounded-2xl
-                bg-slate-50 p-4
-              "
-            >
-              <div
-                className="
-                  flex items-center gap-3
-                "
-              >
-                <Boxes
-                  size={19}
-                  className="text-orange-700"
-                />
-
-                <span
-                  className="
-                    text-sm font-bold
-                    text-slate-700
-                  "
-                >
-                  Productos sin receta
-                </span>
-              </div>
-
-              <span
-                className="
-                  font-black
-                  text-orange-700
-                "
-              >
-                {
-                  panel.inventario
-                    .productosActivosSinReceta
-                }
-              </span>
-            </div>
-
-            <div
-              className="
-                flex items-center
-                justify-between gap-4
-                rounded-2xl
-                bg-slate-50 p-4
-              "
-            >
-              <div
-                className="
-                  flex items-center gap-3
-                "
-              >
-                <CircleDollarSign
-                  size={19}
-                  className="text-violet-700"
-                />
-
-                <span
-                  className="
-                    text-sm font-bold
-                    text-slate-700
-                  "
-                >
-                  Mermas valoradas
-                </span>
-              </div>
-
-              <span
-                className="
-                  font-black
-                  text-violet-700
-                "
-              >
-                {formatearMoneda(
-                  panel.inventario
-                    .costoMermasValoradas,
-                )}
-              </span>
-            </div>
-          </div>
-        </article>
+          )}
+        </div>
       </section>
     </div>
   );

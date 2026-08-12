@@ -7,12 +7,10 @@ import {
   Save,
   ShieldCheck,
   UserRound,
-  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
 import {
-  useMemo,
   useState,
   type FormEvent,
 } from "react";
@@ -43,7 +41,7 @@ interface FormularioUsuarioProps {
 interface ErroresFormulario {
   nombreCompleto?: string;
   username?: string;
-  roles?: string;
+  rol?: string;
   password?: string;
   confirmarPassword?: string;
 }
@@ -121,6 +119,16 @@ const configuracionesRoles: ConfiguracionRol[] = [
     clasesIcono:
       "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300",
   },
+  {
+    rol: "Auxiliar",
+    titulo: "Auxiliar",
+    descripcion: "Funciones de apoyo configurables.",
+    icono: UserRound,
+    clasesSeleccionado:
+      "border-teal-500 bg-teal-50 ring-2 ring-teal-100 dark:border-teal-600 dark:bg-teal-950/35 dark:ring-teal-950/60",
+    clasesIcono:
+      "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300",
+  },
 ];
 
 function ordenarRoles(
@@ -130,6 +138,7 @@ function ordenarRoles(
     "Administrador",
     "Cajero",
     "Inventario",
+    "Auxiliar",
   ];
 
   return orden.filter((rol) =>
@@ -137,18 +146,33 @@ function ordenarRoles(
   );
 }
 
-function obtenerRolPrincipal(
-  roles: RolUsuario[],
-): RolUsuario {
-  if (roles.includes("Administrador")) {
-    return "Administrador";
+function resolverRolesAlGuardar(
+  usuario: Usuario | null,
+  rolPrincipal: RolUsuario,
+): RolUsuario[] {
+  if (rolPrincipal === "Administrador") {
+    return ["Administrador"];
   }
 
-  if (roles.includes("Cajero")) {
-    return "Cajero";
+  if (
+    !usuario ||
+    usuario.rol === "Administrador"
+  ) {
+    return [rolPrincipal];
   }
 
-  return "Inventario";
+  const adicionalesExistentes =
+    usuario.roles.filter(
+      (rol) =>
+        rol !== "Administrador" &&
+        rol !== usuario.rol &&
+        rol !== rolPrincipal,
+    );
+
+  return ordenarRoles([
+    rolPrincipal,
+    ...adicionalesExistentes,
+  ]);
 }
 
 function FormularioUsuario({
@@ -167,17 +191,10 @@ function FormularioUsuario({
       () => usuario?.username ?? "",
     );
 
-  const [roles, setRoles] =
-    useState<RolUsuario[]>(() => {
-      if (
-        usuario?.roles &&
-        usuario.roles.length > 0
-      ) {
-        return ordenarRoles(usuario.roles);
-      }
-
-      return [usuario?.rol ?? "Cajero"];
-    });
+  const [rolPrincipal, setRolPrincipal] =
+    useState<RolUsuario>(
+      () => usuario?.rol ?? "Cajero",
+    );
 
   const [password, setPassword] =
     useState("");
@@ -197,71 +214,12 @@ function FormularioUsuario({
 
   const editando = Boolean(usuario);
 
-  const esAdministrador =
-    roles.includes("Administrador");
-
-  const esMultirrol =
-    !esAdministrador && roles.length > 1;
-
-  const resumenRoles = useMemo(() => {
-    if (roles.length === 0) {
-      return "Seleccione al menos un rol operativo.";
-    }
-
-    if (esAdministrador) {
-      return "Administrador incluye todos los permisos y se mantiene como rol exclusivo.";
-    }
-
-    if (esMultirrol) {
-      return `Permisos combinados: ${roles.join(" + ")}.`;
-    }
-
-    return `Rol asignado: ${roles[0]}.`;
-  }, [
-    roles,
-    esAdministrador,
-    esMultirrol,
-  ]);
-
-  function alternarRol(
-    rol: RolUsuario,
-  ) {
-    if (cargando) {
-      return;
-    }
-
-    setRoles((actuales) => {
-      if (rol === "Administrador") {
-        return actuales.includes(
-          "Administrador",
-        )
-          ? []
-          : ["Administrador"];
-      }
-
-      const sinAdministrador =
-        actuales.filter(
-          (actual) =>
-            actual !== "Administrador",
-        );
-
-      if (sinAdministrador.includes(rol)) {
-        return sinAdministrador.filter(
-          (actual) => actual !== rol,
-        );
-      }
-
-      return ordenarRoles([
-        ...sinAdministrador,
-        rol,
-      ]);
-    });
-
-    setErrores((actuales) => ({
-      ...actuales,
-      roles: undefined,
-    }));
-  }
+  const rolesAdicionalesExistentes =
+    usuario?.roles.filter(
+      (rol) =>
+        rol !== usuario.rol &&
+        rol !== "Administrador",
+    ) ?? [];
 
   function validar(): boolean {
     const nuevosErrores: ErroresFormulario = {};
@@ -285,9 +243,9 @@ function FormularioUsuario({
         "Utilice únicamente letras, números, puntos, guiones o guion bajo.";
     }
 
-    if (roles.length === 0) {
-      nuevosErrores.roles =
-        "Seleccione al menos un rol para la cuenta.";
+    if (!rolPrincipal) {
+      nuevosErrores.rol =
+        "Seleccione el rol principal de la cuenta.";
     }
 
     if (!editando && !password) {
@@ -327,18 +285,17 @@ function FormularioUsuario({
       return;
     }
 
-    const rolesOrdenados =
-      ordenarRoles(roles);
-
-    const rolPrincipal =
-      obtenerRolPrincipal(rolesOrdenados);
+    const roles = resolverRolesAlGuardar(
+      usuario,
+      rolPrincipal,
+    );
 
     if (editando) {
       const datos: ActualizarUsuarioDto = {
         nombreCompleto,
         username,
         rol: rolPrincipal,
-        roles: rolesOrdenados,
+        roles,
       };
 
       if (password) {
@@ -353,7 +310,7 @@ function FormularioUsuario({
       nombreCompleto,
       username,
       rol: rolPrincipal,
-      roles: rolesOrdenados,
+      roles,
       password,
     });
   }
@@ -407,26 +364,25 @@ function FormularioUsuario({
         <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/35">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
-              <UsersRound size={18} />
+              <ShieldCheck size={18} />
             </div>
 
             <div className="min-w-0 flex-1">
               <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                Roles operativos
+                Rol principal
               </h3>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Un empleado puede combinar Cajero e Inventario. Administrador ya incluye acceso completo.
+                Define la función base de la cuenta. Los roles adicionales y permisos especiales se administran en Roles y permisos.
               </p>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {configuracionesRoles.map(
               (configuracion) => {
                 const seleccionado =
-                  roles.includes(
-                    configuracion.rol,
-                  );
+                  rolPrincipal ===
+                  configuracion.rol;
                 const Icono =
                   configuracion.icono;
 
@@ -436,11 +392,15 @@ function FormularioUsuario({
                     type="button"
                     disabled={cargando}
                     aria-pressed={seleccionado}
-                    onClick={() =>
-                      alternarRol(
+                    onClick={() => {
+                      setRolPrincipal(
                         configuracion.rol,
-                      )
-                    }
+                      );
+                      setErrores((actuales) => ({
+                        ...actuales,
+                        rol: undefined,
+                      }));
+                    }}
                     className={`flex min-h-20 items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-roma-500 disabled:cursor-not-allowed disabled:opacity-50 ${
                       seleccionado
                         ? configuracion.clasesSeleccionado
@@ -467,17 +427,21 @@ function FormularioUsuario({
             )}
           </div>
 
-          <div
-            className={`mt-3 rounded-xl px-3 py-2 text-xs font-medium ${
-              errores.roles
-                ? "bg-red-50 text-red-700 dark:bg-red-950/35 dark:text-red-300"
-                : esMultirrol
-                  ? "bg-violet-50 text-violet-700 dark:bg-violet-950/35 dark:text-violet-300"
-                  : "bg-white text-slate-500 dark:bg-slate-900 dark:text-slate-400"
-            }`}
-          >
-            {errores.roles ?? resumenRoles}
-          </div>
+          {errores.rol && (
+            <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/35 dark:text-red-300">
+              {errores.rol}
+            </p>
+          )}
+
+          {editando &&
+            rolesAdicionalesExistentes.length > 0 &&
+            rolPrincipal !== "Administrador" && (
+              <p className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/35 dark:text-violet-300">
+                Esta cuenta también posee {rolesAdicionalesExistentes.join(
+                  " + ",
+                )}. Esos accesos se conservarán; puede modificarlos desde Roles y permisos.
+              </p>
+            )}
         </section>
 
         <section>

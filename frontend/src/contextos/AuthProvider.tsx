@@ -7,7 +7,9 @@ import {
 
 import {
   AuthContext,
+  CajaAbiertaAlCerrarSesionError,
   type AuthContextType,
+  type OpcionesCerrarSesion,
 } from "./AuthContext";
 
 import {
@@ -15,6 +17,10 @@ import {
   type RolUsuario,
   type SesionUsuario,
 } from "../tipos/auth";
+
+import {
+  permisosSistema,
+} from "../tipos/rol";
 
 import {
   auditarAccion,
@@ -79,9 +85,22 @@ function normalizarSesion(
   const rolPrincipal =
     rolesFinales.includes("Administrador")
       ? "Administrador"
-      : rolesFinales.includes("Cajero")
-        ? "Cajero"
-        : "Inventario";
+      : esRolUsuario(
+            sesion.usuario?.rol,
+          ) &&
+          sesion.usuario.rol !==
+            "Administrador" &&
+          rolesFinales.includes(
+            sesion.usuario.rol,
+          )
+        ? sesion.usuario.rol
+        : rolesFinales.includes("Cajero")
+          ? "Cajero"
+          : rolesFinales.includes(
+                "Inventario",
+              )
+            ? "Inventario"
+            : "Auxiliar";
 
   return {
     ...sesion,
@@ -89,11 +108,22 @@ function normalizarSesion(
       ...sesion.usuario,
       rol: rolPrincipal,
       roles: [...rolesFinales],
-      permisos: Array.isArray(
-        sesion.usuario?.permisos,
-      )
-        ? [...sesion.usuario.permisos]
-        : [],
+      permisos:
+        rolesFinales.includes(
+          "Administrador",
+        )
+          ? [...permisosSistema]
+          : Array.isArray(
+                sesion.usuario?.permisos,
+              )
+            ? sesion.usuario.permisos.filter(
+                (permiso) =>
+                  typeof permiso === "string" &&
+                  permisosSistema.includes(
+                    permiso as (typeof permisosSistema)[number],
+                  ),
+              )
+            : [],
     },
   };
 }
@@ -178,48 +208,69 @@ export function AuthProvider({
     );
 
   const cerrarSesion =
-    useCallback(async () => {
-      const usuarioActual =
-        sesion?.usuario ?? null;
+    useCallback(
+      async (
+        opciones?: OpcionesCerrarSesion,
+      ) => {
+        const usuarioActual =
+          sesion?.usuario ?? null;
 
-      if (!usuarioActual) {
+        if (!usuarioActual) {
+          setSesion(null);
+          localStorage.removeItem(
+            CLAVE_SESION,
+          );
+          return;
+        }
+
+        const cajaAbierta =
+          await obtenerCajaAbiertaPorUsuario(
+            usuarioActual.id,
+          );
+
+        if (
+          cajaAbierta &&
+          !opciones?.permitirCajaAbierta
+        ) {
+          throw new CajaAbiertaAlCerrarSesionError(
+            cajaAbierta.id,
+          );
+        }
+
+        void auditarAccion(
+          {
+            modulo: "Autenticación",
+            accion: "Cerrar sesión",
+            entidad: "Sesión",
+            entidadId:
+              usuarioActual.id,
+            descripcion: cajaAbierta
+              ? `${usuarioActual.nombreCompleto} cerró sesión dejando abierta la caja N.º ${cajaAbierta.id}.`
+              : `${usuarioActual.nombreCompleto} cerró su sesión.`,
+            nivel: cajaAbierta
+              ? "Advertencia"
+              : "Información",
+            datosPosteriores: cajaAbierta
+              ? {
+                  cajaAbiertaAlSalir: {
+                    id: cajaAbierta.id,
+                    fechaHoraApertura:
+                      cajaAbierta.fechaHoraApertura,
+                  },
+                }
+              : undefined,
+          },
+          usuarioActual,
+        );
+
         setSesion(null);
+
         localStorage.removeItem(
           CLAVE_SESION,
         );
-        return;
-      }
-
-      const cajaAbierta =
-        await obtenerCajaAbiertaPorUsuario(
-          usuarioActual.id,
-        );
-
-      if (cajaAbierta) {
-        throw new Error(
-          `No puedes cerrar sesión mientras la caja N.º ${cajaAbierta.id} permanezca abierta. Realiza el cierre de tu caja antes de salir.`,
-        );
-      }
-
-      void auditarAccion(
-        {
-          modulo: "Autenticación",
-          accion: "Cerrar sesión",
-          entidad: "Sesión",
-          entidadId:
-            usuarioActual.id,
-          descripcion:
-            `${usuarioActual.nombreCompleto} cerró su sesión.`,
-        },
-        usuarioActual,
-      );
-
-      setSesion(null);
-
-      localStorage.removeItem(
-        CLAVE_SESION,
-      );
-    }, [sesion]);
+      },
+      [sesion],
+    );
 
   const valorContexto =
     useMemo<AuthContextType>(

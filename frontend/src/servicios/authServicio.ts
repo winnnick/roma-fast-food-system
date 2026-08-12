@@ -9,6 +9,7 @@ import {
 } from "./usuarioServicio";
 
 import {
+  normalizarPermisosConDependencias,
   obtenerPermisosRoles,
 } from "./rolServicio";
 
@@ -21,10 +22,16 @@ export async function autenticarUsuario(
       credenciales.password,
     );
 
-  const permisos =
+  const permisosRoles =
     await obtenerPermisosRoles(
       usuario.roles,
     );
+
+  const permisos =
+    normalizarPermisosConDependencias([
+      ...permisosRoles,
+      ...usuario.permisosAdicionales,
+    ]);
 
   await registrarUltimoAccesoUsuario(
     usuario.id,
