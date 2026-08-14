@@ -1,0 +1,178 @@
+name: roma-fast-food
+
+x-service-common: &service-common
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+  environment: &service-environment
+    NODE_ENV: production
+    DATABASE_SSL: "false"
+    RABBITMQ_ENABLED: "true"
+    RABBITMQ_URL: amqp://roma:${RABBITMQ_PASSWORD:-RomaRabbit2026_Local}@rabbitmq:5672
+    CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  networks:
+    - roma-internal
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: roma
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-RomaDb2026_Local}
+      POSTGRES_DB: postgres
+    volumes:
+      - roma-postgres-data:/var/lib/postgresql
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roma -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - roma-internal
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: roma
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-RomaRabbit2026_Local}
+    volumes:
+      - roma-rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - roma-internal
+
+  auth-service:
+    <<: *service-common
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: auth-service
+    environment:
+      <<: *service-environment
+      SERVICE_NAME: auth-service
+      HTTP_PORT: "3101"
+      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_auth
+      RABBITMQ_QUEUE: roma.auth
+    ports:
+      - "3101:3101"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3101/api/v1/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  operations-service:
+    <<: *service-common
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: operations-service
+    environment:
+      <<: *service-environment
+      SERVICE_NAME: operations-service
+      HTTP_PORT: "3102"
+      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_operations
+      RABBITMQ_QUEUE: roma.operations
+    ports:
+      - "3102:3102"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3102/api/v1/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  inventory-service:
+    <<: *service-common
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: inventory-service
+    environment:
+      <<: *service-environment
+      SERVICE_NAME: inventory-service
+      HTTP_PORT: "3103"
+      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_inventory
+      RABBITMQ_QUEUE: roma.inventory
+    ports:
+      - "3103:3103"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3103/api/v1/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  reporting-service:
+    <<: *service-common
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: reporting-service
+    environment:
+      <<: *service-environment
+      SERVICE_NAME: reporting-service
+      HTTP_PORT: "3104"
+      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_reporting
+      RABBITMQ_QUEUE: roma.reporting
+    ports:
+      - "3104:3104"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3104/api/v1/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+networks:
+  roma-internal:
+    driver: bridge
+
+volumes:
+  roma-postgres-data:
+  roma-rabbitmq-data:
