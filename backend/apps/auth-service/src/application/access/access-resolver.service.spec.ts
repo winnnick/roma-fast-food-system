@@ -50,4 +50,15 @@ describe('AccessResolverService', () => {
     expect(result.permisos).toContain('ROLES_GESTIONAR');
     expect(result.permisos).toContain('REPORTES_PEDIDOSYA_LIQUIDAR');
   });
+
+  it('mantiene el rol principal dentro de los roles efectivos', () => {
+    expect(service.normalizeRoles(['Inventario'], 'Cajero')).toEqual(['Inventario']);
+    expect(service.resolvePrimaryRole(['Inventario'], 'Cajero')).toBe('Inventario');
+  });
+
+  it('trata Administrador como rol exclusivo', () => {
+    expect(service.normalizeRoles(['Cajero', 'Administrador'], 'Cajero')).toEqual([
+      'Administrador',
+    ]);
+  });
 });

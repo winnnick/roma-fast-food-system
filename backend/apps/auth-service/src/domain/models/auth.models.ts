@@ -23,6 +23,36 @@ export interface UserSnapshot {
   additionalPermissions: PermissionCode[];
 }
 
+export interface ManagedUserSnapshot {
+  id: number;
+  username: string;
+  fullName: string;
+  status: UserStatus;
+  registeredAt: Date;
+  lastAccess: Date | null;
+  primaryRole: RoleCode;
+  roles: RoleCode[];
+  additionalPermissions: PermissionCode[];
+}
+
+export interface CreateManagedUserInput {
+  username: string;
+  fullName: string;
+  passwordHash: string;
+  primaryRole: RoleCode;
+  roles: RoleCode[];
+  additionalPermissions: PermissionCode[];
+}
+
+export interface UpdateManagedUserInput {
+  username: string;
+  fullName: string;
+  passwordHash?: string;
+  primaryRole: RoleCode;
+  roles: RoleCode[];
+  additionalPermissions: PermissionCode[];
+}
+
 export interface SessionUser {
   id: number;
   username: string;

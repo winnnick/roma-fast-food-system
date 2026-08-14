@@ -57,7 +57,7 @@ export class AccessResolverService {
     };
   }
 
-  private normalizeRoles(roles: readonly RoleCode[], fallback: RoleCode): RoleCode[] {
+  normalizeRoles(roles: readonly RoleCode[], fallback: RoleCode): RoleCode[] {
     const unique = new Set<RoleCode>(roles.length > 0 ? roles : [fallback]);
 
     if (unique.has('Administrador')) {
@@ -69,7 +69,7 @@ export class AccessResolverService {
     return result.length > 0 ? result : [fallback];
   }
 
-  private resolvePrimaryRole(roles: readonly RoleCode[], preferred: RoleCode): RoleCode {
+  resolvePrimaryRole(roles: readonly RoleCode[], preferred: RoleCode): RoleCode {
     if (roles.includes('Administrador')) {
       return 'Administrador';
     }

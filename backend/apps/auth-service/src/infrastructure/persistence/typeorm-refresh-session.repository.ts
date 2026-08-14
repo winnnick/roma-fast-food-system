@@ -48,6 +48,16 @@ export class TypeOrmRefreshSessionRepository implements RefreshSessionRepository
     });
   }
 
+  async revokeAllByUserId(userId: number, revokedAt: Date): Promise<void> {
+    await this.repository
+      .createQueryBuilder()
+      .update(RefreshSessionOrmEntity)
+      .set({ revokedAt })
+      .where('user_id = :userId', { userId })
+      .andWhere('revoked_at IS NULL')
+      .execute();
+  }
+
   async revokeByTokenHash(tokenHash: string, revokedAt: Date): Promise<void> {
     await this.repository
       .createQueryBuilder()
