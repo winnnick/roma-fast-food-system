@@ -140,3 +140,36 @@ El siguiente bloque implementará Auth Service de forma funcional:
 5. refresh token rotatorio;
 6. autorización por permisos;
 7. seed equivalente a los usuarios/roles del frontend actual.
+
+
+## Bloque 2A — Autenticación y sesión
+
+El Auth Service incorpora el modelo persistente de usuarios, roles, permisos y sesiones renovables.
+La contraseña se deriva mediante `scrypt` con salt aleatorio; el valor en texto plano nunca se almacena.
+Los Access Tokens son JWT RS256 de corta duración. La clave privada solo pertenece a Auth y el refresh
+token es opaco, rotativo y se guarda en PostgreSQL únicamente como SHA-256.
+
+### Preparación
+
+```powershell
+npm install
+Copy-Item .env.example .env.local
+npm run auth:keys
+```
+
+Cuando PostgreSQL esté disponible:
+
+```powershell
+npm run db:migrate:auth
+npm run db:seed:auth
+npm run start:dev:auth
+```
+
+Endpoints iniciales:
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+
+El refresh token viaja en una cookie `HttpOnly`; el frontend no necesita leerlo directamente.

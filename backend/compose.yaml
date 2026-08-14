@@ -70,6 +70,16 @@ services:
       HTTP_PORT: "3101"
       DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_auth
       RABBITMQ_QUEUE: roma.auth
+      JWT_PRIVATE_KEY_PATH: /run/secrets/roma-jwt/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
+      JWT_ISSUER: roma-fast-food-auth
+      JWT_AUDIENCE: roma-fast-food-api
+      JWT_ACCESS_TTL_SECONDS: "900"
+      REFRESH_TOKEN_TTL_SECONDS: "43200"
+      REFRESH_COOKIE_NAME: roma_refresh_token
+      REFRESH_COOKIE_SECURE: "false"
+    volumes:
+      - ./.secrets/docker:/run/secrets/roma-jwt:ro
     ports:
       - "3101:3101"
     healthcheck:

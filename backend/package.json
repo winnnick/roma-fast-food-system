@@ -18,10 +18,13 @@
     "start:dev:operations": "nest start operations-service --watch",
     "start:dev:inventory": "nest start inventory-service --watch",
     "start:dev:reporting": "nest start reporting-service --watch",
-    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
-    "lint": "eslint \"{apps,libs}/**/*.ts\" --max-warnings=0",
+    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\" \"scripts/**/*.ts\"",
+    "lint": "eslint \"{apps,libs,scripts}/**/*.ts\" --max-warnings=0",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "auth:keys": "node -r ts-node/register -r tsconfig-paths/register scripts/generate-jwt-keys.ts",
+    "db:migrate:auth": "node -r ts-node/register -r tsconfig-paths/register scripts/run-auth-migrations.ts",
+    "db:seed:auth": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-auth.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",
@@ -40,7 +43,9 @@
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "typeorm": "^1.1.0"
+    "typeorm": "^1.1.0",
+    "@nestjs/jwt": "^11.0.2",
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",

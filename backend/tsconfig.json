@@ -25,6 +25,9 @@
       "@roma/shared/*": [
         "./libs/shared/src/*"
       ]
-    }
+    },
+    "types": [
+      "node"
+    ]
   }
 }
