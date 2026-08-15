@@ -129,19 +129,6 @@ Un microservicio es dueño de su base:
 
 Ningún servicio debe modificar directamente tablas pertenecientes a otro servicio. La coordinación entre límites se realizará mediante APIs síncronas cuando se necesite respuesta inmediata y eventos RabbitMQ cuando se admita desacoplamiento/consistencia eventual.
 
-## Siguiente bloque
-
-El siguiente bloque implementará Auth Service de forma funcional:
-
-1. entidades y migraciones de usuarios, roles, permisos y refresh tokens;
-2. contraseñas con hash;
-3. login mediante CQRS;
-4. JWT con firma asimétrica;
-5. refresh token rotatorio;
-6. autorización por permisos;
-7. seed equivalente a los usuarios/roles del frontend actual.
-
-
 ## Bloque 2A — Autenticación y sesión
 
 El Auth Service incorpora el modelo persistente de usuarios, roles, permisos y sesiones renovables.
@@ -173,3 +160,25 @@ Endpoints iniciales:
 - `GET /api/v1/auth/me`
 
 El refresh token viaja en una cookie `HttpOnly`; el frontend no necesita leerlo directamente.
+
+## Desarrollo local sin Docker
+
+Cada servicio usa una URL de base independiente (`AUTH_DATABASE_URL`, `OPERATIONS_DATABASE_URL`,
+`INVENTORY_DATABASE_URL`, `REPORTING_DATABASE_URL`). `DATABASE_URL` se conserva únicamente como
+fallback para contenedores/configuración heredada.
+
+Para Auth, con PostgreSQL local disponible:
+
+```powershell
+npm run db:migrate:auth
+npm run db:seed:auth
+npm run start:dev:auth
+```
+
+En otra terminal se puede ejecutar el smoke test HTTP:
+
+```powershell
+npm run test:smoke:auth
+```
+
+Este smoke test valida readiness, login, JWT, acceso administrativo y un rechazo 403 para Cajero.

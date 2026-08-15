@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 
 import { DatabaseModule, HealthModule } from '@roma/shared';
+import { OperationsModule } from './operations.module';
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { DatabaseModule, HealthModule } from '@roma/shared';
       cache: true,
     }),
     CqrsModule.forRoot(),
-    DatabaseModule,
+    DatabaseModule.forRoot({ databaseUrlEnv: 'OPERATIONS_DATABASE_URL' }),
+    OperationsModule,
     HealthModule,
   ],
 })

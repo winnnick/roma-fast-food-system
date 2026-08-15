@@ -108,6 +108,11 @@ services:
       HTTP_PORT: "3102"
       DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_operations
       RABBITMQ_QUEUE: roma.operations
+      JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
+      JWT_ISSUER: roma-fast-food-auth
+      JWT_AUDIENCE: roma-fast-food-api
+    volumes:
+      - ./.secrets/docker:/run/secrets/roma-jwt:ro
     ports:
       - "3102:3102"
     healthcheck:

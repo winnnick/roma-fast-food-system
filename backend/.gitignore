@@ -8,3 +8,6 @@ coverage/
 
 # Claves JWT locales / de despliegue
 .secrets/
+
+# Runtime local descartable (PostgreSQL portable, datos y logs)
+.runtime/

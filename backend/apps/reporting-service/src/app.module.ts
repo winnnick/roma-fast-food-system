@@ -12,7 +12,7 @@ import { DatabaseModule, HealthModule } from '@roma/shared';
       cache: true,
     }),
     CqrsModule.forRoot(),
-    DatabaseModule,
+    DatabaseModule.forRoot({ databaseUrlEnv: 'REPORTING_DATABASE_URL' }),
     HealthModule,
   ],
 })

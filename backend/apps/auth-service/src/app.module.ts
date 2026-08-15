@@ -13,7 +13,7 @@ import { AuthModule } from './auth.module';
       cache: true,
     }),
     CqrsModule.forRoot(),
-    DatabaseModule,
+    DatabaseModule.forRoot({ databaseUrlEnv: 'AUTH_DATABASE_URL' }),
     AuthModule,
     HealthModule,
   ],

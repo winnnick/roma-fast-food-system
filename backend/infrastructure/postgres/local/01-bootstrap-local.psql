@@ -1,0 +1,29 @@
+\set ON_ERROR_STOP on
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'roma') THEN
+    CREATE ROLE roma WITH LOGIN PASSWORD 'roma_dev_password';
+  ELSE
+    ALTER ROLE roma WITH LOGIN PASSWORD 'roma_dev_password';
+  END IF;
+END
+$$;
+
+SELECT 'CREATE DATABASE roma_auth OWNER roma'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'roma_auth')
+\gexec
+
+SELECT 'CREATE DATABASE roma_operations OWNER roma'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'roma_operations')
+\gexec
+
+SELECT 'CREATE DATABASE roma_inventory OWNER roma'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'roma_inventory')
+\gexec
+
+SELECT 'CREATE DATABASE roma_reporting OWNER roma'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'roma_reporting')
+\gexec
+
+\echo 'Bases locales de Roma Fast Food verificadas.'
