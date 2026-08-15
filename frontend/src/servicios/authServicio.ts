@@ -4,54 +4,52 @@ import type {
 } from "../tipos/auth";
 
 import {
-  registrarUltimoAccesoUsuario,
-  validarCredencialesUsuario,
-} from "./usuarioServicio";
+  apiAuth,
+  crearErrorApi,
+} from "./apiCliente";
 
-import {
-  normalizarPermisosConDependencias,
-  obtenerPermisosRoles,
-} from "./rolServicio";
+interface RespuestaSesionApi
+  extends SesionUsuario {
+  expiresInSeconds?: number;
+}
 
 export async function autenticarUsuario(
   credenciales: CredencialesLogin,
 ): Promise<SesionUsuario> {
-  const usuario =
-    await validarCredencialesUsuario(
-      credenciales.username,
-      credenciales.password,
+  try {
+    const respuesta =
+      await apiAuth.post<RespuestaSesionApi>(
+        "/auth/login",
+        {
+          username:
+            credenciales.username.trim(),
+          password:
+            credenciales.password,
+        },
+      );
+
+    return {
+      usuario: respuesta.data.usuario,
+      accessToken:
+        respuesta.data.accessToken,
+      fechaInicio:
+        respuesta.data.fechaInicio,
+    };
+  } catch (error) {
+    throw crearErrorApi(
+      error,
+      "No fue posible iniciar sesión.",
     );
+  }
+}
 
-  const permisosRoles =
-    await obtenerPermisosRoles(
-      usuario.roles,
-    );
-
-  const permisos =
-    normalizarPermisosConDependencias([
-      ...permisosRoles,
-      ...usuario.permisosAdicionales,
-    ]);
-
-  await registrarUltimoAccesoUsuario(
-    usuario.id,
-  );
-
-  return {
-    usuario: {
-      id: usuario.id,
-      username: usuario.username,
-      nombreCompleto:
-        usuario.nombreCompleto,
-      rol: usuario.rol,
-      roles: [...usuario.roles],
-      permisos,
-    },
-
-    accessToken:
-      `token-demo-${crypto.randomUUID()}`,
-
-    fechaInicio:
-      new Date().toISOString(),
-  };
+export async function cerrarSesionRemota():
+  Promise<void> {
+  try {
+    await apiAuth.post("/auth/logout");
+  } catch {
+    // El cierre local sigue siendo prioritario si la API no está
+    // disponible; el refresh token expirará o será reemplazado en el
+    // siguiente inicio de sesión.
+  }
 }

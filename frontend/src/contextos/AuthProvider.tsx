@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -27,6 +28,15 @@ import {
 } from "../servicios/auditoriaAccionesServicio";
 
 import {
+  cerrarSesionRemota,
+} from "../servicios/authServicio";
+
+import {
+  CLAVE_SESION_API,
+  EVENTO_SESION_API_ACTUALIZADA,
+} from "../servicios/apiCliente";
+
+import {
   obtenerCajaAbiertaPorUsuario,
 } from "../servicios/cajaServicio";
 
@@ -34,7 +44,7 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const CLAVE_SESION = "roma-sesion";
+const CLAVE_SESION = CLAVE_SESION_API;
 
 function esRolUsuario(
   valor: unknown,
@@ -166,6 +176,24 @@ export function AuthProvider({
       recuperarSesion,
     );
 
+  useEffect(() => {
+    function sincronizarSesionApi() {
+      setSesion(recuperarSesion());
+    }
+
+    window.addEventListener(
+      EVENTO_SESION_API_ACTUALIZADA,
+      sincronizarSesionApi,
+    );
+
+    return () => {
+      window.removeEventListener(
+        EVENTO_SESION_API_ACTUALIZADA,
+        sincronizarSesionApi,
+      );
+    };
+  }, []);
+
   const iniciarSesion =
     useCallback(
       (
@@ -262,6 +290,8 @@ export function AuthProvider({
           },
           usuarioActual,
         );
+
+        await cerrarSesionRemota();
 
         setSesion(null);
 
