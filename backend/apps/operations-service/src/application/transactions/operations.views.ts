@@ -42,6 +42,10 @@ export interface SaleView {
   pagoId: number | null;
   metodoPago: SaleSnapshot['accumulatedPaymentMethod'];
   motivoAnulacion: string | null;
+  estadoInventario: SaleSnapshot['inventoryStatus'];
+  consumoInventarioId: number | null;
+  ultimoErrorInventario: string | null;
+  fechaHoraInventario: string | null;
   fechaHoraRegistro: string;
   fechaHoraInicioPreparacion: string | null;
   fechaHoraListo: string | null;
@@ -163,6 +167,10 @@ export function toSaleView(sale: SaleSnapshot): SaleView {
     pagoId: sale.lastPaymentId,
     metodoPago: sale.accumulatedPaymentMethod,
     motivoAnulacion: sale.cancellationReason,
+    estadoInventario: sale.inventoryStatus,
+    consumoInventarioId: sale.inventoryConsumptionId,
+    ultimoErrorInventario: sale.inventoryLastError,
+    fechaHoraInventario: iso(sale.inventoryUpdatedAt),
     fechaHoraRegistro: sale.registeredAt.toISOString(),
     fechaHoraInicioPreparacion: iso(sale.preparationStartedAt),
     fechaHoraListo: iso(sale.readyAt),

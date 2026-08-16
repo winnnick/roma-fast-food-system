@@ -13,6 +13,7 @@ x-service-common: &service-common
     RABBITMQ_ENABLED: "true"
     RABBITMQ_URL: amqp://roma:${RABBITMQ_PASSWORD:-RomaRabbit2026_Local}@rabbitmq:5672
     CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-RomaInternal2026_Local_ChangeMe}
   networks:
     - roma-internal
 
@@ -111,6 +112,8 @@ services:
       JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
       JWT_ISSUER: roma-fast-food-auth
       JWT_AUDIENCE: roma-fast-food-api
+      INVENTORY_INTERNAL_BASE_URL: http://inventory-service:3103/api/v1/internal/inventario
+      INTERNAL_HTTP_TIMEOUT_MS: "5000"
     volumes:
       - ./.secrets/docker:/run/secrets/roma-jwt:ro
     ports:

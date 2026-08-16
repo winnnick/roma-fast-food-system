@@ -100,6 +100,7 @@ export class SalesController {
           note: detail.observacion ?? null,
         })),
         observations: dto.observaciones ?? null,
+        authorizeNegativeInventory: dto.autorizaSaldoNegativo ?? false,
         userId: user.id,
         userName: user.name,
       }),
@@ -121,8 +122,21 @@ export class SalesController {
 
   @Post(':id/anulacion')
   @RequirePermissions('VENTAS_ANULAR')
-  cancel(@Param('id', ParseIntPipe) id: number, @Body() dto: CancelSaleDto): Promise<SaleView> {
-    return this.commandBus.execute(new CancelSaleCommand(id, dto.motivo));
+  cancel(
+    @Req() request: AuthenticatedApiRequest,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CancelSaleDto,
+  ): Promise<SaleView> {
+    const user = auth(request);
+    return this.commandBus.execute(
+      new CancelSaleCommand(
+        id,
+        dto.motivo,
+        dto.tratamientoInventario ?? 'Reintegrar insumos',
+        user.id,
+        user.name,
+      ),
+    );
   }
 
   @Post(':id/pagos')

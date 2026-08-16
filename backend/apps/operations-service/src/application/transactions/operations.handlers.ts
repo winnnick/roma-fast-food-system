@@ -1,8 +1,19 @@
-import { BadRequestException, ConflictException, Inject, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { CommandHandler, ICommandHandler, IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
 import type { ClientRepositoryPort, ProductRepositoryPort } from '../../domain/ports/catalog.ports';
 import { CLIENT_REPOSITORY, PRODUCT_REPOSITORY } from '../../domain/ports/catalog.ports';
+import type { InventoryIntegrationPort } from '../../domain/ports/inventory-integration.ports';
+import {
+  INVENTORY_INTEGRATION,
+  InventoryIntegrationError,
+} from '../../domain/ports/inventory-integration.ports';
 import type { OperationsTransactionRepositoryPort } from '../../domain/ports/operations.ports';
 import { OPERATIONS_TRANSACTION_REPOSITORY } from '../../domain/ports/operations.ports';
 import type { PreparedSaleInput } from '../../domain/operations/operations.models';
@@ -58,6 +69,7 @@ export class CreateSaleHandler
     rules: OperationsRulesService,
     @Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepositoryPort,
     @Inject(CLIENT_REPOSITORY) private readonly clients: ClientRepositoryPort,
+    @Inject(INVENTORY_INTEGRATION) private readonly inventory: InventoryIntegrationPort,
   ) {
     super(operations, rules);
   }
@@ -137,6 +149,31 @@ export class CreateSaleHandler
     const requiresPreparation = details.some((detail) => detail.requiresPreparation);
     const startMode = await this.operations.getPreparationStartMode();
     const preparationStatus = requiresPreparation ? startMode : 'Entrega directa';
+    const inventoryDetails = details.map((detail) => ({
+      productId: detail.productId,
+      quantity: detail.quantity,
+    }));
+    let evaluation;
+    try {
+      evaluation = await this.inventory.evaluate(inventoryDetails);
+    } catch (error) {
+      throw this.inventoryUnavailable(error);
+    }
+    if (evaluation.bloqueada) {
+      throw new ConflictException({
+        code: 'INVENTORY_BLOCKED',
+        message: 'El pedido utiliza insumos que bloquean la venta por faltante.',
+        evaluacionInventario: evaluation,
+      });
+    }
+    if (evaluation.requiereConfirmacion && !input.authorizeNegativeInventory) {
+      throw new ConflictException({
+        code: 'INVENTORY_CONFIRMATION_REQUIRED',
+        message: 'El pedido dejará existencias negativas y requiere confirmación.',
+        evaluacionInventario: evaluation,
+      });
+    }
+
     const prepared: PreparedSaleInput = {
       salesChannel,
       pedidosYaReference,
@@ -154,7 +191,74 @@ export class CreateSaleHandler
       userName: input.userName,
       cashSessionId: cash.id,
     };
-    return toSaleView(await this.operations.createSale(prepared));
+    const sale = await this.operations.createSale(prepared);
+    try {
+      const consumption = await this.inventory.consume({
+        saleId: sale.id,
+        orderNumber: sale.orderNumber,
+        details: inventoryDetails,
+        authorizeNegativeBalance: input.authorizeNegativeInventory,
+        userId: input.userId,
+        userName: input.userName,
+      });
+      const synced = await this.operations.updateSaleInventoryState(
+        sale.id,
+        'Aplicado',
+        consumption.id,
+        null,
+      );
+      return toSaleView(synced ?? sale);
+    } catch (error) {
+      let compensated = false;
+      try {
+        await this.inventory.treatCancellation({
+          saleId: sale.id,
+          orderNumber: sale.orderNumber,
+          treatment: 'Reintegrar insumos',
+          reason: 'Compensación automática por fallo durante el registro del pedido.',
+          userId: input.userId,
+          userName: input.userName,
+        });
+        compensated = true;
+      } catch (compensationError) {
+        if (
+          compensationError instanceof InventoryIntegrationError &&
+          compensationError.status === 404
+        ) {
+          compensated = true;
+        }
+      }
+      await this.operations.cancelSale(
+        sale.id,
+        'Registro revertido automáticamente por fallo de integración con inventario.',
+      );
+      await this.operations.updateSaleInventoryState(
+        sale.id,
+        compensated ? 'Reintegrado' : 'Error',
+        null,
+        error instanceof Error ? error.message : 'Error desconocido de inventario.',
+      );
+      throw this.inventoryUnavailable(error);
+    }
+  }
+
+  private inventoryUnavailable(error: unknown): ConflictException | ServiceUnavailableException {
+    const message =
+      error instanceof InventoryIntegrationError
+        ? error.message
+        : 'No fue posible completar la operación de inventario.';
+    if (error instanceof InventoryIntegrationError && error.status === 409) {
+      return new ConflictException({
+        code: 'INVENTORY_CHANGED',
+        message:
+          'El inventario cambió mientras se registraba el pedido. Revisa las existencias e inténtalo nuevamente.',
+        detail: message,
+      });
+    }
+    return new ServiceUnavailableException({
+      code: 'INVENTORY_SERVICE_UNAVAILABLE',
+      message,
+    });
   }
 }
 
@@ -201,6 +305,7 @@ export class CancelSaleHandler
   constructor(
     @Inject(OPERATIONS_TRANSACTION_REPOSITORY) operations: OperationsTransactionRepositoryPort,
     rules: OperationsRulesService,
+    @Inject(INVENTORY_INTEGRATION) private readonly inventory: InventoryIntegrationPort,
   ) {
     super(operations, rules);
   }
@@ -208,7 +313,8 @@ export class CancelSaleHandler
   async execute(command: CancelSaleCommand): Promise<SaleView> {
     const sale = await this.operations.findSaleById(command.saleId);
     if (!sale) throw new NotFoundException('El pedido seleccionado no existe.');
-    if (sale.preparationStatus === 'Anulado')
+    const retryInventory = sale.preparationStatus === 'Anulado' && sale.inventoryStatus === 'Error';
+    if (sale.preparationStatus === 'Anulado' && !retryInventory)
       throw new ConflictException('El pedido ya se encuentra anulado.');
     if (sale.preparationStatus === 'Entregado')
       throw new ConflictException('Un pedido entregado no puede anularse desde este módulo.');
@@ -221,9 +327,48 @@ export class CancelSaleHandler
     const reason = command.reason.trim();
     if (reason.length < 5 || reason.length > 200)
       throw new BadRequestException('Indica un motivo de anulación de 5 a 200 caracteres.');
-    const updated = await this.operations.cancelSale(command.saleId, reason);
-    if (!updated) throw new NotFoundException('El pedido seleccionado no existe.');
-    return toSaleView(updated);
+
+    let cancelled = sale;
+    if (sale.preparationStatus !== 'Anulado') {
+      const result = await this.operations.cancelSale(command.saleId, reason);
+      if (!result) throw new NotFoundException('El pedido seleccionado no existe.');
+      cancelled = result;
+    }
+
+    if (sale.inventoryStatus === 'No integrado') {
+      return toSaleView(cancelled);
+    }
+
+    try {
+      const consumption = await this.inventory.treatCancellation({
+        saleId: sale.id,
+        orderNumber: sale.orderNumber,
+        treatment: command.inventoryTreatment,
+        reason,
+        userId: command.userId,
+        userName: command.userName,
+      });
+      const status = command.inventoryTreatment === 'Reintegrar insumos' ? 'Reintegrado' : 'Merma';
+      const synced = await this.operations.updateSaleInventoryState(
+        sale.id,
+        status,
+        consumption.id,
+        null,
+      );
+      return toSaleView(synced ?? cancelled);
+    } catch (error) {
+      await this.operations.updateSaleInventoryState(
+        sale.id,
+        'Error',
+        sale.inventoryConsumptionId,
+        error instanceof Error ? error.message : 'Error desconocido de inventario.',
+      );
+      throw new ServiceUnavailableException({
+        code: 'INVENTORY_CANCELLATION_PENDING',
+        message:
+          'El pedido quedó anulado, pero el tratamiento de inventario quedó pendiente. Reintenta la anulación para conciliarlo.',
+      });
+    }
   }
 }
 

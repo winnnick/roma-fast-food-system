@@ -51,6 +51,7 @@ import {
   CLIENT_REPOSITORY,
   PRODUCT_REPOSITORY,
 } from './domain/ports/catalog.ports';
+import { INVENTORY_INTEGRATION } from './domain/ports/inventory-integration.ports';
 import { OPERATIONS_TRANSACTION_REPOSITORY } from './domain/ports/operations.ports';
 import { CashMovementOrmEntity } from './infrastructure/persistence/entities/cash-movement.orm-entity';
 import { CashSessionOrmEntity } from './infrastructure/persistence/entities/cash-session.orm-entity';
@@ -61,6 +62,7 @@ import { ProductOrmEntity } from './infrastructure/persistence/entities/product.
 import { SaleDetailOrmEntity } from './infrastructure/persistence/entities/sale-detail.orm-entity';
 import { SalePaymentOrmEntity } from './infrastructure/persistence/entities/sale-payment.orm-entity';
 import { SaleOrmEntity } from './infrastructure/persistence/entities/sale.orm-entity';
+import { HttpInventoryIntegration } from './infrastructure/integration/http-inventory.integration';
 import { TypeOrmCategoryRepository } from './infrastructure/persistence/typeorm-category.repository';
 import { TypeOrmClientRepository } from './infrastructure/persistence/typeorm-client.repository';
 import { TypeOrmOperationsTransactionRepository } from './infrastructure/persistence/typeorm-operations-transaction.repository';
@@ -134,6 +136,7 @@ const handlers = [
     CatalogValidationService,
     OperationsRulesService,
     ...handlers,
+    { provide: INVENTORY_INTEGRATION, useClass: HttpInventoryIntegration },
     { provide: CATEGORY_REPOSITORY, useClass: TypeOrmCategoryRepository },
     { provide: PRODUCT_REPOSITORY, useClass: TypeOrmProductRepository },
     { provide: CLIENT_REPOSITORY, useClass: TypeOrmClientRepository },

@@ -16,12 +16,11 @@ export class DatabaseModule {
           imports: [ConfigModule],
           inject: [ConfigService],
           useFactory: (config: ConfigService): TypeOrmModuleOptions => {
-            const databaseUrl =
-              config.get<string>(options.databaseUrlEnv) ?? config.get<string>('DATABASE_URL');
+            const databaseUrl = config.get<string>(options.databaseUrlEnv);
 
             if (!databaseUrl) {
               throw new Error(
-                `Se requiere ${options.databaseUrlEnv} (o DATABASE_URL como compatibilidad).`,
+                `Se requiere ${options.databaseUrlEnv}. Cada microservicio debe usar su propia base de datos.`,
               );
             }
 

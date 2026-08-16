@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -41,6 +42,7 @@ export class CreateSaleDto {
   @Type(() => SaleDetailDto)
   detalles!: SaleDetailDto[];
   @IsOptional() @IsString() @MaxLength(500) observaciones?: string | null;
+  @IsOptional() @IsBoolean() autorizaSaldoNegativo?: boolean;
 }
 
 export class PreparationStatusDto {
@@ -52,6 +54,9 @@ export class PreparationModeDto {
 }
 export class CancelSaleDto {
   @IsString() @MinLength(5) @MaxLength(200) motivo!: string;
+  @IsOptional()
+  @IsIn(['Reintegrar insumos', 'Registrar como merma'])
+  tratamientoInventario?: 'Reintegrar insumos' | 'Registrar como merma';
 }
 export class OpenCashDto {
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) montoInicial!: number;

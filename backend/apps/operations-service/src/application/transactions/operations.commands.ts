@@ -21,6 +21,9 @@ export class CancelSaleCommand {
   constructor(
     public readonly saleId: number,
     public readonly reason: string,
+    public readonly inventoryTreatment: 'Reintegrar insumos' | 'Registrar como merma',
+    public readonly userId: number,
+    public readonly userName: string,
   ) {}
 }
 export class ChangePreparationStartModeCommand {

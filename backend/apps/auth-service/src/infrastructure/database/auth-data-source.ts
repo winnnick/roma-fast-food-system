@@ -12,10 +12,10 @@ import { CreateAuthSchema1786644000000 } from './migrations/1786644000000-create
 loadEnv({ path: resolve(process.cwd(), '.env.local'), override: false, quiet: true });
 loadEnv({ path: resolve(process.cwd(), '.env'), override: false, quiet: true });
 
-const databaseUrl = process.env.AUTH_DATABASE_URL ?? process.env.DATABASE_URL;
+const databaseUrl = process.env.AUTH_DATABASE_URL;
 if (!databaseUrl) {
   throw new Error(
-    'AUTH_DATABASE_URL (o DATABASE_URL como compatibilidad) es obligatorio para migraciones de Auth.',
+    'AUTH_DATABASE_URL es obligatorio para migraciones de Auth. No se permite una URL genérica compartida.',
   );
 }
 

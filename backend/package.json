@@ -32,7 +32,8 @@
     "test:smoke:transactions": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-transactions.ts",
     "db:migrate:inventory": "node -r ts-node/register -r tsconfig-paths/register scripts/run-inventory-migrations.ts",
     "db:seed:inventory": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-inventory.ts",
-    "test:smoke:inventory": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-inventory.ts"
+    "test:smoke:inventory": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-inventory.ts",
+    "test:smoke:operations-inventory": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-operations-inventory.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

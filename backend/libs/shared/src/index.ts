@@ -8,6 +8,7 @@ export * from './security/access-token-claims';
 export * from './security/authenticated-request';
 export * from './security/api-security.module';
 export * from './security/jwt-auth.guard';
+export * from './security/internal-service.guard';
 export * from './security/permissions.guard';
 export * from './security/require-permissions.decorator';
 export * from './security/rsa-jwt-verifier.service';

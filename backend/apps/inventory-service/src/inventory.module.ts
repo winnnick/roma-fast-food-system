@@ -37,6 +37,7 @@ import { SaleConsumptionDetailOrmEntity } from './infrastructure/persistence/ent
 import { SaleConsumptionOrmEntity } from './infrastructure/persistence/entities/sale-consumption.orm-entity';
 import { TypeOrmInventoryRepository } from './infrastructure/persistence/typeorm-inventory.repository';
 import { InventoryController } from './interface/http/inventory.controller';
+import { InventoryInternalController } from './interface/http/inventory-internal.controller';
 
 const handlers = [
   CreateIngredientHandler,
@@ -76,7 +77,7 @@ const handlers = [
       InventoryCountDetailOrmEntity,
     ]),
   ],
-  controllers: [InventoryController],
+  controllers: [InventoryController, InventoryInternalController],
   providers: [
     InventoryRulesService,
     ...handlers,

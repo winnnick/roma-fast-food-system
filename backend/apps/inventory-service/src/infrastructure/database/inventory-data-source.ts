@@ -17,10 +17,10 @@ import { CreateInventorySchema1786960800000 } from './migrations/1786960800000-c
 loadEnv({ path: resolve(process.cwd(), '.env.local'), override: false, quiet: true });
 loadEnv({ path: resolve(process.cwd(), '.env'), override: false, quiet: true });
 
-const databaseUrl = process.env.INVENTORY_DATABASE_URL ?? process.env.DATABASE_URL;
+const databaseUrl = process.env.INVENTORY_DATABASE_URL;
 if (!databaseUrl) {
   throw new Error(
-    'INVENTORY_DATABASE_URL (o DATABASE_URL como compatibilidad) es obligatorio para migraciones de Inventory.',
+    'INVENTORY_DATABASE_URL es obligatorio para migraciones de Inventory. No se permite una URL genérica compartida.',
   );
 }
 

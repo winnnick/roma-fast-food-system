@@ -14,6 +14,7 @@ import type {
   SaleDetailSnapshot,
   SalePaymentSnapshot,
   SaleSnapshot,
+  SaleInventoryStatus,
 } from '../../domain/operations/operations.models';
 import type { OperationsTransactionRepositoryPort } from '../../domain/ports/operations.ports';
 import { CashMovementOrmEntity } from './entities/cash-movement.orm-entity';
@@ -87,6 +88,10 @@ export class TypeOrmOperationsTransactionRepository implements OperationsTransac
         lastPaymentId: null,
         accumulatedPaymentMethod: null,
         cancellationReason: null,
+        inventoryStatus: 'Pendiente',
+        inventoryConsumptionId: null,
+        inventoryLastError: null,
+        inventoryUpdatedAt: now,
         registeredAt: now,
         preparationStartedAt: input.preparationStatus === 'En preparación' ? now : null,
         readyAt: null,
@@ -149,6 +154,23 @@ export class TypeOrmOperationsTransactionRepository implements OperationsTransac
       sale.updatedAt = now;
       return this.toSaleSnapshot(await repo.save(sale));
     });
+  }
+
+  async updateSaleInventoryState(
+    saleId: number,
+    status: SaleInventoryStatus,
+    consumptionId: number | null,
+    error: string | null,
+  ): Promise<SaleSnapshot | null> {
+    const repo = this.dataSource.getRepository(SaleOrmEntity);
+    const sale = await repo.findOne({ where: { id: saleId }, relations: { details: true } });
+    if (!sale) return null;
+    sale.inventoryStatus = status;
+    sale.inventoryConsumptionId = consumptionId;
+    sale.inventoryLastError = error?.slice(0, 500) ?? null;
+    sale.inventoryUpdatedAt = new Date();
+    sale.updatedAt = sale.inventoryUpdatedAt;
+    return this.toSaleSnapshot(await repo.save(sale));
   }
 
   async getPreparationStartMode(): Promise<PreparationStartMode> {
@@ -570,6 +592,10 @@ export class TypeOrmOperationsTransactionRepository implements OperationsTransac
       lastPaymentId: row.lastPaymentId,
       accumulatedPaymentMethod: row.accumulatedPaymentMethod,
       cancellationReason: row.cancellationReason,
+      inventoryStatus: row.inventoryStatus,
+      inventoryConsumptionId: row.inventoryConsumptionId,
+      inventoryLastError: row.inventoryLastError,
+      inventoryUpdatedAt: row.inventoryUpdatedAt,
       registeredAt: row.registeredAt,
       preparationStartedAt: row.preparationStartedAt,
       readyAt: row.readyAt,

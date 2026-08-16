@@ -9,6 +9,8 @@ export type DiscountType = 'Ninguno' | 'Porcentaje' | 'Monto fijo';
 export type PaymentMethod = 'Efectivo' | 'QR' | 'Mixto';
 export type CashSessionStatus = 'Abierta' | 'Cerrada';
 export type CashMovementType = 'Venta' | 'Ingreso' | 'Egreso';
+export type SaleInventoryStatus =
+  'No integrado' | 'Pendiente' | 'Aplicado' | 'Reintegrado' | 'Merma' | 'Error';
 
 export interface SaleDetailSnapshot {
   id: number;
@@ -49,6 +51,10 @@ export interface SaleSnapshot {
   lastPaymentId: number | null;
   accumulatedPaymentMethod: PaymentMethod | null;
   cancellationReason: string | null;
+  inventoryStatus: SaleInventoryStatus;
+  inventoryConsumptionId: number | null;
+  inventoryLastError: string | null;
+  inventoryUpdatedAt: Date | null;
   registeredAt: Date;
   preparationStartedAt: Date | null;
   readyAt: Date | null;
@@ -75,6 +81,7 @@ export interface CreateSaleInput {
   clientName: string | null;
   details: CreateSaleDetailInput[];
   observations: string | null;
+  authorizeNegativeInventory: boolean;
   userId: number;
   userName: string;
 }

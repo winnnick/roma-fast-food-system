@@ -6,6 +6,7 @@ import type {
   PreparationStatus,
   SaleClientType,
   SalesChannel,
+  SaleInventoryStatus,
 } from '../../../domain/operations/operations.models';
 import { moneyTransformer } from './money.transformer';
 import { SaleDetailOrmEntity } from './sale-detail.orm-entity';
@@ -65,6 +66,14 @@ export class SaleOrmEntity {
   accumulatedPaymentMethod!: PaymentMethod | null;
   @Column({ name: 'cancellation_reason', type: 'varchar', length: 200, nullable: true })
   cancellationReason!: string | null;
+  @Column({ name: 'inventory_status', type: 'varchar', length: 30, default: 'No integrado' })
+  inventoryStatus!: SaleInventoryStatus;
+  @Column({ name: 'inventory_consumption_id', type: 'integer', nullable: true })
+  inventoryConsumptionId!: number | null;
+  @Column({ name: 'inventory_last_error', type: 'varchar', length: 500, nullable: true })
+  inventoryLastError!: string | null;
+  @Column({ name: 'inventory_updated_at', type: 'timestamptz', nullable: true })
+  inventoryUpdatedAt!: Date | null;
   @Column({ name: 'registered_at', type: 'timestamptz' }) registeredAt!: Date;
   @Column({ name: 'preparation_started_at', type: 'timestamptz', nullable: true })
   preparationStartedAt!: Date | null;

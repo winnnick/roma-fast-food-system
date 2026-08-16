@@ -9,6 +9,7 @@ import type {
   RegisterPaymentInput,
   SalePaymentSnapshot,
   SaleSnapshot,
+  SaleInventoryStatus,
 } from '../operations/operations.models';
 
 export const OPERATIONS_TRANSACTION_REPOSITORY = Symbol('OPERATIONS_TRANSACTION_REPOSITORY');
@@ -23,6 +24,12 @@ export interface OperationsTransactionRepositoryPort {
     delivery: { userId: number; userName: string; cashSessionId: number } | null,
   ): Promise<SaleSnapshot | null>;
   cancelSale(saleId: number, reason: string): Promise<SaleSnapshot | null>;
+  updateSaleInventoryState(
+    saleId: number,
+    status: SaleInventoryStatus,
+    consumptionId: number | null,
+    error: string | null,
+  ): Promise<SaleSnapshot | null>;
 
   getPreparationStartMode(): Promise<PreparationStartMode>;
   setPreparationStartMode(mode: PreparationStartMode): Promise<PreparationStartMode>;
