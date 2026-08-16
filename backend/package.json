@@ -28,7 +28,8 @@
     "test:smoke:auth": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-auth.ts",
     "db:migrate:operations": "node -r ts-node/register -r tsconfig-paths/register scripts/run-operations-migrations.ts",
     "db:seed:operations": "node -r ts-node/register -r tsconfig-paths/register scripts/seed-operations.ts",
-    "test:smoke:operations": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-operations.ts"
+    "test:smoke:operations": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-operations.ts",
+    "test:smoke:transactions": "node -r ts-node/register -r tsconfig-paths/register scripts/smoke-transactions.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.28",

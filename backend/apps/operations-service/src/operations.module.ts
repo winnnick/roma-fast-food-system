@@ -28,19 +28,48 @@ import {
   UpdateProductHandler,
 } from './application/products/product.handlers';
 import {
+  CancelSaleHandler,
+  ChangePreparationStartModeHandler,
+  ChangePreparationStatusHandler,
+  CloseCashSessionHandler,
+  CreateSaleHandler,
+  GetCashSummaryHandler,
+  GetOpenCashSessionHandler,
+  GetPreparationConfigurationHandler,
+  GetSaleByIdHandler as GetTransactionalSaleByIdHandler,
+  ListCashMovementsHandler,
+  ListCashSessionsHandler,
+  ListSalePaymentsHandler,
+  ListSalesHandler,
+  OpenCashSessionHandler,
+  RegisterManualCashMovementHandler,
+  RegisterSalePaymentHandler,
+} from './application/transactions/operations.handlers';
+import { OperationsRulesService } from './application/transactions/operations-rules.service';
+import {
   CATEGORY_REPOSITORY,
   CLIENT_REPOSITORY,
   PRODUCT_REPOSITORY,
 } from './domain/ports/catalog.ports';
+import { OPERATIONS_TRANSACTION_REPOSITORY } from './domain/ports/operations.ports';
+import { CashMovementOrmEntity } from './infrastructure/persistence/entities/cash-movement.orm-entity';
+import { CashSessionOrmEntity } from './infrastructure/persistence/entities/cash-session.orm-entity';
 import { CategoryOrmEntity } from './infrastructure/persistence/entities/category.orm-entity';
 import { ClientOrmEntity } from './infrastructure/persistence/entities/client.orm-entity';
+import { OperationsSettingOrmEntity } from './infrastructure/persistence/entities/operations-setting.orm-entity';
 import { ProductOrmEntity } from './infrastructure/persistence/entities/product.orm-entity';
+import { SaleDetailOrmEntity } from './infrastructure/persistence/entities/sale-detail.orm-entity';
+import { SalePaymentOrmEntity } from './infrastructure/persistence/entities/sale-payment.orm-entity';
+import { SaleOrmEntity } from './infrastructure/persistence/entities/sale.orm-entity';
 import { TypeOrmCategoryRepository } from './infrastructure/persistence/typeorm-category.repository';
 import { TypeOrmClientRepository } from './infrastructure/persistence/typeorm-client.repository';
+import { TypeOrmOperationsTransactionRepository } from './infrastructure/persistence/typeorm-operations-transaction.repository';
 import { TypeOrmProductRepository } from './infrastructure/persistence/typeorm-product.repository';
+import { CashController } from './interface/http/cash.controller';
 import { CategoriesController } from './interface/http/categories.controller';
 import { ClientsController } from './interface/http/clients.controller';
 import { ProductsController } from './interface/http/products.controller';
+import { SalesController } from './interface/http/sales.controller';
 
 const handlers = [
   CreateCategoryHandler,
@@ -60,21 +89,58 @@ const handlers = [
   ChangeClientArchivedHandler,
   ListClientsHandler,
   GetClientByIdHandler,
+  CreateSaleHandler,
+  ChangePreparationStatusHandler,
+  CancelSaleHandler,
+  ChangePreparationStartModeHandler,
+  OpenCashSessionHandler,
+  RegisterManualCashMovementHandler,
+  CloseCashSessionHandler,
+  RegisterSalePaymentHandler,
+  ListSalesHandler,
+  GetTransactionalSaleByIdHandler,
+  GetPreparationConfigurationHandler,
+  GetOpenCashSessionHandler,
+  ListCashSessionsHandler,
+  ListCashMovementsHandler,
+  ListSalePaymentsHandler,
+  GetCashSummaryHandler,
 ];
 
 @Module({
   imports: [
     CqrsModule,
     ApiSecurityModule,
-    TypeOrmModule.forFeature([CategoryOrmEntity, ProductOrmEntity, ClientOrmEntity]),
+    TypeOrmModule.forFeature([
+      CategoryOrmEntity,
+      ProductOrmEntity,
+      ClientOrmEntity,
+      CashSessionOrmEntity,
+      SaleOrmEntity,
+      SaleDetailOrmEntity,
+      SalePaymentOrmEntity,
+      CashMovementOrmEntity,
+      OperationsSettingOrmEntity,
+    ]),
   ],
-  controllers: [CategoriesController, ProductsController, ClientsController],
+  controllers: [
+    CategoriesController,
+    ProductsController,
+    ClientsController,
+    SalesController,
+    CashController,
+  ],
   providers: [
     CatalogValidationService,
+    OperationsRulesService,
     ...handlers,
     { provide: CATEGORY_REPOSITORY, useClass: TypeOrmCategoryRepository },
     { provide: PRODUCT_REPOSITORY, useClass: TypeOrmProductRepository },
     { provide: CLIENT_REPOSITORY, useClass: TypeOrmClientRepository },
+    {
+      provide: OPERATIONS_TRANSACTION_REPOSITORY,
+      useClass: TypeOrmOperationsTransactionRepository,
+    },
   ],
 })
 export class OperationsModule {}
