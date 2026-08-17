@@ -14,13 +14,12 @@ import {
 } from "react";
 
 import {
-  obtenerModoInicioPreparacion,
-  listarVentas,
+  listarPedidosPantallaPublica,
 } from "../../servicios/ventaServicio";
 
 import type {
   ModoInicioPreparacion,
-  Venta,
+  PedidoPantallaPublica,
 } from "../../tipos/venta";
 
 const TIEMPO_VISIBLE_LISTO_MS =
@@ -53,9 +52,9 @@ function formatearHoraPedido(fecha: string): string {
 interface ColumnaPedidosProps {
   titulo: string;
   descripcion: string;
-  ventas: Venta[];
+  ventas: PedidoPantallaPublica[];
   tono: "cola" | "preparacion" | "listo";
-  fechaReferencia: (venta: Venta) => string;
+  fechaReferencia: (venta: PedidoPantallaPublica) => string;
 }
 
 function ColumnaPedidos({
@@ -166,26 +165,22 @@ function ColumnaPedidos({
 }
 
 function PantallaPedidos() {
-  const [ventas, setVentas] = useState<Venta[]>([]);
+  const [ventas, setVentas] = useState<PedidoPantallaPublica[]>([]);
   const [ahora, setAhora] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
   const [modoInicioPreparacion, setModoInicioPreparacion] =
-    useState<ModoInicioPreparacion>(
-      obtenerModoInicioPreparacion,
-    );
+    useState<ModoInicioPreparacion>("En preparación");
 
   useEffect(() => {
     let componenteActivo = true;
 
     function cargarEstado() {
-      Promise.resolve(listarVentas())
+      Promise.resolve(listarPedidosPantallaPublica())
         .then((respuesta) => {
           if (!componenteActivo) return;
 
-          setVentas(respuesta);
-          setModoInicioPreparacion(
-            obtenerModoInicioPreparacion(),
-          );
+          setVentas(respuesta.ventas);
+          setModoInicioPreparacion(respuesta.modoInicioPreparacion);
           setError(null);
         })
         .catch(() => {
@@ -207,37 +202,10 @@ function PantallaPedidos() {
       setAhora(new Date());
     }, 1000);
 
-    function manejarCambioStorage(evento: StorageEvent) {
-      if (
-        evento.key === "roma-ventas-unificadas-v1" ||
-        evento.key === "roma-ventas-flujo-preparacion-v1"
-      ) {
-        cargarEstado();
-      }
-    }
-
-    function manejarCambioFlujo() {
-      if (!componenteActivo) return;
-      setModoInicioPreparacion(
-        obtenerModoInicioPreparacion(),
-      );
-    }
-
-    window.addEventListener("storage", manejarCambioStorage);
-    window.addEventListener(
-      "roma-flujo-preparacion-actualizado",
-      manejarCambioFlujo,
-    );
-
     return () => {
       componenteActivo = false;
       window.clearInterval(intervaloDatos);
       window.clearInterval(intervaloReloj);
-      window.removeEventListener("storage", manejarCambioStorage);
-      window.removeEventListener(
-        "roma-flujo-preparacion-actualizado",
-        manejarCambioFlujo,
-      );
     };
   }, []);
 

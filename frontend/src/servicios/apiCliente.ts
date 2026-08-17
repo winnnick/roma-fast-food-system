@@ -120,6 +120,12 @@ export const apiOperations =
     timeout: 12_000,
   });
 
+export const apiOperationsPublic =
+  axios.create({
+    baseURL: URL_OPERATIONS,
+    timeout: 12_000,
+  });
+
 let renovacionEnCurso:
   Promise<SesionUsuario> | null = null;
 

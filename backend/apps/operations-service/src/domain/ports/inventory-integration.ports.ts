@@ -10,8 +10,10 @@ export interface InventoryEvaluationProjection {
   cantidadDisponible: number;
   cantidadRequerida: number;
   saldoResultante: number;
-  nivel: string;
-  politicaFaltante: string;
+  nivel: 'Normal' | 'Bajo' | 'Negativo' | 'Bloqueado' | 'Insumo inactivo';
+  stockMinimo: number | null;
+  politicaFaltante: 'Permitir con advertencia' | 'Bloquear';
+  recetaVersionIds: number[];
   productosRelacionados: string[];
 }
 

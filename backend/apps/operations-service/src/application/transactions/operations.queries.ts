@@ -16,3 +16,7 @@ export class ListSalePaymentsQuery {
 export class GetCashSummaryQuery {
   constructor(public readonly cashSessionId: number) {}
 }
+
+export class EvaluateSaleInventoryQuery {
+  constructor(public readonly details: Array<{ productId: number; quantity: number }>) {}
+}

@@ -145,6 +145,17 @@ export interface Venta {
 
   motivoAnulacion: string | null;
 
+  estadoInventario:
+    | "No integrado"
+    | "Pendiente"
+    | "Aplicado"
+    | "Reintegrado"
+    | "Merma"
+    | "Error";
+  consumoInventarioId: number | null;
+  ultimoErrorInventario: string | null;
+  fechaHoraInventario: string | null;
+
   fechaHoraRegistro: string;
   fechaHoraInicioPreparacion: string | null;
   fechaHoraListo: string | null;
@@ -199,3 +210,18 @@ export interface ResumenPedidosYaPeriodo {
   liquidaciones: LiquidacionPedidosYa[];
 }
 
+
+
+export interface PedidoPantallaPublica {
+  id: number;
+  numeroPedido: string;
+  estadoPreparacion: EstadoPreparacion;
+  fechaHoraRegistro: string;
+  fechaHoraInicioPreparacion: string | null;
+  fechaHoraListo: string | null;
+}
+
+export interface RespuestaPantallaPedidosPublica {
+  modoInicioPreparacion: ModoInicioPreparacion;
+  ventas: PedidoPantallaPublica[];
+}

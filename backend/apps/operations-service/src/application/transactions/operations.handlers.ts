@@ -9,7 +9,10 @@ import { CommandHandler, ICommandHandler, IQueryHandler, QueryHandler } from '@n
 
 import type { ClientRepositoryPort, ProductRepositoryPort } from '../../domain/ports/catalog.ports';
 import { CLIENT_REPOSITORY, PRODUCT_REPOSITORY } from '../../domain/ports/catalog.ports';
-import type { InventoryIntegrationPort } from '../../domain/ports/inventory-integration.ports';
+import type {
+  InventoryEvaluationResult,
+  InventoryIntegrationPort,
+} from '../../domain/ports/inventory-integration.ports';
 import {
   INVENTORY_INTEGRATION,
   InventoryIntegrationError,
@@ -28,6 +31,7 @@ import {
   RegisterSalePaymentCommand,
 } from './operations.commands';
 import {
+  EvaluateSaleInventoryQuery,
   GetCashSummaryQuery,
   GetOpenCashSessionQuery,
   GetPreparationConfigurationQuery,
@@ -494,6 +498,32 @@ export class RegisterSalePaymentHandler
       userName: command.userName,
     });
     return { pago: toPaymentView(result.payment), venta: toSaleView(result.sale) };
+  }
+}
+
+@QueryHandler(EvaluateSaleInventoryQuery)
+export class EvaluateSaleInventoryHandler implements IQueryHandler<
+  EvaluateSaleInventoryQuery,
+  InventoryEvaluationResult
+> {
+  constructor(
+    @Inject(INVENTORY_INTEGRATION) private readonly inventory: InventoryIntegrationPort,
+  ) {}
+
+  async execute(query: EvaluateSaleInventoryQuery): Promise<InventoryEvaluationResult> {
+    try {
+      return await this.inventory.evaluate(query.details);
+    } catch (error) {
+      const message =
+        error instanceof InventoryIntegrationError
+          ? error.message
+          : 'No fue posible evaluar las existencias del pedido.';
+
+      throw new ServiceUnavailableException({
+        code: 'INVENTORY_SERVICE_UNAVAILABLE',
+        message,
+      });
+    }
   }
 }
 

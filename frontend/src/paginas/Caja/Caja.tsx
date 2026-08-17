@@ -353,6 +353,7 @@ function imprimirTicket(
 
 async function cargarInformacionCaja(
   usuarioId: number,
+  puedeVerUsuarios: boolean,
 ): Promise<DatosCajaCargados> {
   const [
     caja,
@@ -365,7 +366,9 @@ async function cargarInformacionCaja(
     ),
     listarSesionesCaja(),
     listarMovimientosCaja(),
-    listarUsuarios(),
+    puedeVerUsuarios
+      ? listarUsuarios()
+      : Promise.resolve([]),
   ]);
 
   const resumen = caja
@@ -385,6 +388,11 @@ async function cargarInformacionCaja(
 
 function Caja() {
   const { usuario } = useAuth();
+
+  const puedeVerUsuarios =
+    usuario?.permisos.includes(
+      "USUARIOS_VER",
+    ) ?? false;
 
   const puedeAbrirCaja =
     usuario?.permisos.includes(
@@ -532,6 +540,7 @@ function Caja() {
         const datos =
           await cargarInformacionCaja(
             usuario.id,
+            puedeVerUsuarios,
           );
 
         aplicarDatos(datos);
@@ -541,7 +550,11 @@ function Caja() {
         );
       }
     },
-    [usuario, aplicarDatos],
+    [
+      usuario,
+      puedeVerUsuarios,
+      aplicarDatos,
+    ],
   );
 
   useEffect(() => {
@@ -553,7 +566,10 @@ function Caja() {
       };
     }
 
-    cargarInformacionCaja(usuario.id)
+    cargarInformacionCaja(
+      usuario.id,
+      puedeVerUsuarios,
+    )
       .then((datos) => {
         if (componenteActivo) {
           aplicarDatos(datos);
@@ -575,7 +591,11 @@ function Caja() {
     return () => {
       componenteActivo = false;
     };
-  }, [usuario, aplicarDatos]);
+  }, [
+    usuario,
+    puedeVerUsuarios,
+    aplicarDatos,
+  ]);
 
   const opcionesUsuarios =
     useMemo<OpcionUsuario[]>(() => {

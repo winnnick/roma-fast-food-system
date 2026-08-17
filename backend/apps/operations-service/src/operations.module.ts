@@ -33,6 +33,7 @@ import {
   ChangePreparationStatusHandler,
   CloseCashSessionHandler,
   CreateSaleHandler,
+  EvaluateSaleInventoryHandler,
   GetCashSummaryHandler,
   GetOpenCashSessionHandler,
   GetPreparationConfigurationHandler,
@@ -71,6 +72,7 @@ import { CashController } from './interface/http/cash.controller';
 import { CategoriesController } from './interface/http/categories.controller';
 import { ClientsController } from './interface/http/clients.controller';
 import { ProductsController } from './interface/http/products.controller';
+import { PublicOrdersController } from './interface/http/public-orders.controller';
 import { SalesController } from './interface/http/sales.controller';
 
 const handlers = [
@@ -92,6 +94,7 @@ const handlers = [
   ListClientsHandler,
   GetClientByIdHandler,
   CreateSaleHandler,
+  EvaluateSaleInventoryHandler,
   ChangePreparationStatusHandler,
   CancelSaleHandler,
   ChangePreparationStartModeHandler,
@@ -131,6 +134,7 @@ const handlers = [
     ClientsController,
     SalesController,
     CashController,
+    PublicOrdersController,
   ],
   providers: [
     CatalogValidationService,

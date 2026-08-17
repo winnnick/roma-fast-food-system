@@ -27,6 +27,7 @@ import {
   RegisterSalePaymentCommand,
 } from '../../application/transactions/operations.commands';
 import {
+  EvaluateSaleInventoryQuery,
   GetPreparationConfigurationQuery,
   GetSaleByIdQuery,
   ListSalePaymentsQuery,
@@ -40,6 +41,7 @@ import type {
 import {
   CancelSaleDto,
   CreateSaleDto,
+  EvaluateInventorySaleDto,
   PreparationModeDto,
   PreparationStatusDto,
   RegisterPaymentDto,
@@ -76,6 +78,19 @@ export class SalesController {
   @RequirePermissions('VENTAS_CONFIGURAR_FLUJO')
   changePreparationConfig(@Body() dto: PreparationModeDto): Promise<PreparationConfigurationView> {
     return this.commandBus.execute(new ChangePreparationStartModeCommand(dto.modo));
+  }
+
+  @Post('evaluar-inventario')
+  @RequirePermissions('VENTAS_CREAR')
+  evaluateInventory(@Body() dto: EvaluateInventorySaleDto) {
+    return this.queryBus.execute(
+      new EvaluateSaleInventoryQuery(
+        dto.detalles.map((detail) => ({
+          productId: detail.productoId,
+          quantity: detail.cantidad,
+        })),
+      ),
+    );
   }
 
   @Get(':id')

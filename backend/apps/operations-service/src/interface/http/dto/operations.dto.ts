@@ -45,6 +45,14 @@ export class CreateSaleDto {
   @IsOptional() @IsBoolean() autorizaSaldoNegativo?: boolean;
 }
 
+export class EvaluateInventorySaleDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SaleDetailDto)
+  detalles!: SaleDetailDto[];
+}
+
 export class PreparationStatusDto {
   @IsIn(['En cola', 'En preparación', 'Entrega directa', 'Listo', 'Entregado', 'Anulado'])
   estado!: PreparationStatus;
