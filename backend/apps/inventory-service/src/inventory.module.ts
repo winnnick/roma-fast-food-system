@@ -25,6 +25,7 @@ import {
   UpdateIngredientHandler,
 } from './application/inventory/inventory.handlers';
 import { InventoryRulesService } from './application/inventory/inventory-rules.service';
+import { GetInventoryReportingSnapshotHandler } from './application/reporting/inventory-reporting.handler';
 import { SyncProductReferenceHandler } from './application/inventory/product-reference.handler';
 import { INVENTORY_REPOSITORY } from './domain/ports/inventory.ports';
 import { PRODUCT_REFERENCE_REPOSITORY } from './domain/ports/product-reference.ports';
@@ -41,6 +42,7 @@ import { TypeOrmInventoryRepository } from './infrastructure/persistence/typeorm
 import { TypeOrmProductReferenceRepository } from './infrastructure/persistence/typeorm-product-reference.repository';
 import { InventoryController } from './interface/http/inventory.controller';
 import { InventoryInternalController } from './interface/http/inventory-internal.controller';
+import { InventoryInternalReportingController } from './interface/http/internal-reporting.controller';
 
 const handlers = [
   CreateIngredientHandler,
@@ -63,6 +65,7 @@ const handlers = [
   ListInventoryCountsHandler,
   GetInventorySummaryHandler,
   SyncProductReferenceHandler,
+  GetInventoryReportingSnapshotHandler,
 ];
 
 @Module({
@@ -81,7 +84,11 @@ const handlers = [
       InventoryCountDetailOrmEntity,
     ]),
   ],
-  controllers: [InventoryController, InventoryInternalController],
+  controllers: [
+    InventoryController,
+    InventoryInternalController,
+    InventoryInternalReportingController,
+  ],
   providers: [
     InventoryRulesService,
     ...handlers,

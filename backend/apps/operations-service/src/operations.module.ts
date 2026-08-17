@@ -47,6 +47,7 @@ import {
   RegisterSalePaymentHandler,
 } from './application/transactions/operations.handlers';
 import { OperationsRulesService } from './application/transactions/operations-rules.service';
+import { GetOperationsReportingSnapshotHandler } from './application/reporting/operations-reporting.handler';
 import {
   CATEGORY_REPOSITORY,
   CLIENT_REPOSITORY,
@@ -73,6 +74,7 @@ import { CategoriesController } from './interface/http/categories.controller';
 import { ClientsController } from './interface/http/clients.controller';
 import { ProductsController } from './interface/http/products.controller';
 import { PublicOrdersController } from './interface/http/public-orders.controller';
+import { OperationsInternalReportingController } from './interface/http/internal-reporting.controller';
 import { SalesController } from './interface/http/sales.controller';
 
 const handlers = [
@@ -110,6 +112,7 @@ const handlers = [
   ListCashMovementsHandler,
   ListSalePaymentsHandler,
   GetCashSummaryHandler,
+  GetOperationsReportingSnapshotHandler,
 ];
 
 @Module({
@@ -135,6 +138,7 @@ const handlers = [
     SalesController,
     CashController,
     PublicOrdersController,
+    OperationsInternalReportingController,
   ],
   providers: [
     CatalogValidationService,

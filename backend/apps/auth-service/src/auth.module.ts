@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+
+import { ApiSecurityModule } from '@roma/shared';
 import { CqrsModule } from '@nestjs/cqrs';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -9,6 +11,7 @@ import { LoginHandler } from './application/auth/login.handler';
 import { LogoutHandler } from './application/auth/logout.handler';
 import { RefreshSessionHandler } from './application/auth/refresh-session.handler';
 import { ListRolesHandler } from './application/roles/list-roles.handler';
+import { GetAuthReportingSnapshotHandler } from './application/reporting/auth-reporting.handler';
 import { ResetRolePermissionsHandler } from './application/roles/reset-role-permissions.handler';
 import { UpdateRolePermissionsHandler } from './application/roles/update-role-permissions.handler';
 import { ChangeUserStatusHandler } from './application/users/change-user-status.handler';
@@ -38,6 +41,7 @@ import { JwtAuthGuard } from './interface/http/jwt-auth.guard';
 import { PermissionsGuard } from './interface/http/permissions.guard';
 import { RolesController } from './interface/http/roles.controller';
 import { UsersController } from './interface/http/users.controller';
+import { AuthInternalReportingController } from './interface/http/internal-reporting.controller';
 
 const commandHandlers = [
   LoginHandler,
@@ -51,12 +55,13 @@ const commandHandlers = [
   ResetRolePermissionsHandler,
 ];
 
-const queryHandlers = [ListUsersHandler, ListRolesHandler];
+const queryHandlers = [ListUsersHandler, ListRolesHandler, GetAuthReportingSnapshotHandler];
 
 @Module({
   imports: [
     CqrsModule,
     JwtModule.register({}),
+    ApiSecurityModule,
     TypeOrmModule.forFeature([
       UserOrmEntity,
       RoleOrmEntity,
@@ -64,7 +69,7 @@ const queryHandlers = [ListUsersHandler, ListRolesHandler];
       RefreshSessionOrmEntity,
     ]),
   ],
-  controllers: [AuthController, UsersController, RolesController],
+  controllers: [AuthController, UsersController, RolesController, AuthInternalReportingController],
   providers: [
     AccessResolverService,
     AuthSessionFactory,
