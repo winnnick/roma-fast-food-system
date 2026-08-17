@@ -8,6 +8,7 @@ export class RecipeItemOrmEntity {
   @PrimaryGeneratedColumn('identity') id!: number;
   @Column({ name: 'recipe_id', type: 'integer' }) recipeId!: number;
   @Column({ name: 'ingredient_id', type: 'integer' }) ingredientId!: number;
+  @Column({ name: 'display_order', type: 'integer' }) displayOrder!: number;
   @Column({
     name: 'quantity_per_product',
     type: 'numeric',

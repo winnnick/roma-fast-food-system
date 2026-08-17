@@ -13,6 +13,7 @@ import { RecipeOrmEntity } from '../persistence/entities/recipe.orm-entity';
 import { SaleConsumptionDetailOrmEntity } from '../persistence/entities/sale-consumption-detail.orm-entity';
 import { SaleConsumptionOrmEntity } from '../persistence/entities/sale-consumption.orm-entity';
 import { CreateInventorySchema1786960800000 } from './migrations/1786960800000-create-inventory-schema';
+import { AddRecipeItemDisplayOrder1787306400000 } from './migrations/1787306400000-add-recipe-item-display-order';
 
 loadEnv({ path: resolve(process.cwd(), '.env.local'), override: false, quiet: true });
 loadEnv({ path: resolve(process.cwd(), '.env'), override: false, quiet: true });
@@ -40,6 +41,6 @@ export const InventoryDataSource = new DataSource({
     InventoryCountOrmEntity,
     InventoryCountDetailOrmEntity,
   ],
-  migrations: [CreateInventorySchema1786960800000],
+  migrations: [CreateInventorySchema1786960800000, AddRecipeItemDisplayOrder1787306400000],
   migrationsTableName: 'inventory_migrations',
 });

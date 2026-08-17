@@ -347,10 +347,11 @@ export class TypeOrmInventoryRepository implements InventoryRepositoryPort {
       );
       const itemRepo = manager.getRepository(RecipeItemOrmEntity);
       await itemRepo.save(
-        input.ingredients.map((item) =>
+        input.ingredients.map((item, index) =>
           itemRepo.create({
             recipeId: recipe.id,
             ingredientId: item.ingredientId,
+            displayOrder: index + 1,
             quantityPerProduct: this.rules.roundQuantity(item.quantityPerProduct),
           }),
         ),
@@ -596,8 +597,16 @@ export class TypeOrmInventoryRepository implements InventoryRepositoryPort {
         { text: `%${filter.text.trim().toLowerCase()}%` },
       );
     }
-    if (filter.from) qb.andWhere('movement.registeredAt >= :from', { from: filter.from });
-    if (filter.to) qb.andWhere('movement.registeredAt <= :to', { to: filter.to });
+    if (filter.from) {
+      qb.andWhere('movement.registeredAt >= :from', {
+        from: this.parseMovementDateBoundary(filter.from, 'start'),
+      });
+    }
+    if (filter.to) {
+      qb.andWhere('movement.registeredAt <= :to', {
+        to: this.parseMovementDateBoundary(filter.to, 'end'),
+      });
+    }
     return (await qb.getMany()).map((row) => this.toMovement(row));
   }
 
@@ -961,6 +970,22 @@ export class TypeOrmInventoryRepository implements InventoryRepositoryPort {
     };
   }
 
+  private parseMovementDateBoundary(value: string, boundary: 'start' | 'end'): Date {
+    const trimmed = value.trim();
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
+    const parsed = new Date(
+      dateOnly
+        ? `${trimmed}T${boundary === 'start' ? '00:00:00.000' : '23:59:59.999'}-04:00`
+        : trimmed,
+    );
+
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('El rango de fechas de movimientos no es válido.');
+    }
+
+    return parsed;
+  }
+
   private async mapRecipes(rows: RecipeOrmEntity[]): Promise<RecipeSnapshot[]> {
     if (rows.length === 0) return [];
     const ingredientIds = [
@@ -981,7 +1006,8 @@ export class TypeOrmInventoryRepository implements InventoryRepositoryPort {
       productName: row.productName,
       version: row.version,
       status: row.status,
-      ingredients: row.items
+      ingredients: [...row.items]
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id)
         .map((item) => {
           const ingredient = ingredientMap.get(item.ingredientId);
           if (!ingredient) return null;

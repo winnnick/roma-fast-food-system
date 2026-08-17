@@ -4,30 +4,29 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 
-import type {
-  SesionUsuario,
-} from "../tipos/auth";
+import type { SesionUsuario } from "../tipos/auth";
 
-export const CLAVE_SESION_API =
-  "roma-sesion";
+export const CLAVE_SESION_API = "roma-sesion";
 
-export const EVENTO_SESION_API_ACTUALIZADA =
-  "roma-sesion-api-actualizada";
+export const EVENTO_SESION_API_ACTUALIZADA = "roma-sesion-api-actualizada";
 
-const URL_AUTH = (
-  import.meta.env.VITE_AUTH_API_URL as
-    | string
-    | undefined
-)?.replace(/\/$/, "") ??
-  "http://localhost:3101/api/v1";
+const URL_AUTH =
+  (import.meta.env.VITE_AUTH_API_URL as string | undefined)?.replace(
+    /\/$/,
+    "",
+  ) ?? "http://localhost:3101/api/v1";
 
-const URL_OPERATIONS = (
-  import.meta.env
-    .VITE_OPERATIONS_API_URL as
-    | string
-    | undefined
-)?.replace(/\/$/, "") ??
-  "http://localhost:3102/api/v1";
+const URL_OPERATIONS =
+  (import.meta.env.VITE_OPERATIONS_API_URL as string | undefined)?.replace(
+    /\/$/,
+    "",
+  ) ?? "http://localhost:3102/api/v1";
+
+const URL_INVENTORY =
+  (import.meta.env.VITE_INVENTORY_API_URL as string | undefined)?.replace(
+    /\/$/,
+    "",
+  ) ?? "http://localhost:3103/api/v1";
 
 interface RespuestaErrorApi {
   message?: unknown;
@@ -36,69 +35,45 @@ interface RespuestaErrorApi {
   error?: unknown;
 }
 
-interface ConfiguracionReintento
-  extends InternalAxiosRequestConfig {
+interface ConfiguracionReintento extends InternalAxiosRequestConfig {
   _romaReintento?: boolean;
 }
 
-function leerSesionPersistida():
-  SesionUsuario | null {
-  const valor = localStorage.getItem(
-    CLAVE_SESION_API,
-  );
+function leerSesionPersistida(): SesionUsuario | null {
+  const valor = localStorage.getItem(CLAVE_SESION_API);
 
   if (!valor) {
     return null;
   }
 
   try {
-    return JSON.parse(
-      valor,
-    ) as SesionUsuario;
+    return JSON.parse(valor) as SesionUsuario;
   } catch {
-    localStorage.removeItem(
-      CLAVE_SESION_API,
-    );
+    localStorage.removeItem(CLAVE_SESION_API);
     return null;
   }
 }
 
-function notificarSesion(
-  sesion: SesionUsuario | null,
-): void {
+function notificarSesion(sesion: SesionUsuario | null): void {
   window.dispatchEvent(
-    new CustomEvent(
-      EVENTO_SESION_API_ACTUALIZADA,
-      {
-        detail: sesion,
-      },
-    ),
+    new CustomEvent(EVENTO_SESION_API_ACTUALIZADA, {
+      detail: sesion,
+    }),
   );
 }
 
-export function guardarSesionApi(
-  sesion: SesionUsuario,
-): void {
-  localStorage.setItem(
-    CLAVE_SESION_API,
-    JSON.stringify(sesion),
-  );
+export function guardarSesionApi(sesion: SesionUsuario): void {
+  localStorage.setItem(CLAVE_SESION_API, JSON.stringify(sesion));
   notificarSesion(sesion);
 }
 
 export function limpiarSesionApi(): void {
-  localStorage.removeItem(
-    CLAVE_SESION_API,
-  );
+  localStorage.removeItem(CLAVE_SESION_API);
   notificarSesion(null);
 }
 
-export function obtenerAccessTokenApi():
-  string | null {
-  return (
-    leerSesionPersistida()
-      ?.accessToken ?? null
-  );
+export function obtenerAccessTokenApi(): string | null {
+  return leerSesionPersistida()?.accessToken ?? null;
 }
 
 const clienteRefresh = axios.create({
@@ -113,21 +88,24 @@ export const apiAuth = axios.create({
   timeout: 12_000,
 });
 
-export const apiOperations =
-  axios.create({
-    baseURL: URL_OPERATIONS,
-    withCredentials: true,
-    timeout: 12_000,
-  });
+export const apiOperations = axios.create({
+  baseURL: URL_OPERATIONS,
+  withCredentials: true,
+  timeout: 12_000,
+});
 
-export const apiOperationsPublic =
-  axios.create({
-    baseURL: URL_OPERATIONS,
-    timeout: 12_000,
-  });
+export const apiOperationsPublic = axios.create({
+  baseURL: URL_OPERATIONS,
+  timeout: 12_000,
+});
 
-let renovacionEnCurso:
-  Promise<SesionUsuario> | null = null;
+export const apiInventory = axios.create({
+  baseURL: URL_INVENTORY,
+  withCredentials: true,
+  timeout: 12_000,
+});
+
+let renovacionEnCurso: Promise<SesionUsuario> | null = null;
 
 function agregarBearer(
   config: InternalAxiosRequestConfig,
@@ -135,26 +113,18 @@ function agregarBearer(
   const token = obtenerAccessTokenApi();
 
   if (token) {
-    config.headers.set(
-      "Authorization",
-      `Bearer ${token}`,
-    );
+    config.headers.set("Authorization", `Bearer ${token}`);
   }
 
   return config;
 }
 
-async function renovarSesion():
-  Promise<SesionUsuario> {
+async function renovarSesion(): Promise<SesionUsuario> {
   if (!renovacionEnCurso) {
     renovacionEnCurso = clienteRefresh
-      .post<SesionUsuario>(
-        "/auth/refresh",
-      )
+      .post<SesionUsuario>("/auth/refresh")
       .then((respuesta) => {
-        guardarSesionApi(
-          respuesta.data,
-        );
+        guardarSesionApi(respuesta.data);
         return respuesta.data;
       })
       .catch((error: unknown) => {
@@ -170,32 +140,20 @@ async function renovarSesion():
 }
 
 function esRutaSinRenovacion(
-  config:
-    | InternalAxiosRequestConfig
-    | undefined,
+  config: InternalAxiosRequestConfig | undefined,
 ): boolean {
   const url = config?.url ?? "";
 
-  return (
-    url.includes("/auth/login") ||
-    url.includes("/auth/refresh")
-  );
+  return url.includes("/auth/login") || url.includes("/auth/refresh");
 }
 
-function configurarInterceptors(
-  cliente: AxiosInstance,
-): void {
-  cliente.interceptors.request.use(
-    agregarBearer,
-  );
+function configurarInterceptors(cliente: AxiosInstance): void {
+  cliente.interceptors.request.use(agregarBearer);
 
   cliente.interceptors.response.use(
     (respuesta) => respuesta,
     async (error: AxiosError) => {
-      const config =
-        error.config as
-          | ConfiguracionReintento
-          | undefined;
+      const config = error.config as ConfiguracionReintento | undefined;
 
       if (
         error.response?.status !== 401 ||
@@ -208,13 +166,9 @@ function configurarInterceptors(
 
       config._romaReintento = true;
 
-      const sesion =
-        await renovarSesion();
+      const sesion = await renovarSesion();
 
-      config.headers.set(
-        "Authorization",
-        `Bearer ${sesion.accessToken}`,
-      );
+      config.headers.set("Authorization", `Bearer ${sesion.accessToken}`);
 
       return cliente.request(config);
     },
@@ -223,41 +177,29 @@ function configurarInterceptors(
 
 configurarInterceptors(apiAuth);
 configurarInterceptors(apiOperations);
+configurarInterceptors(apiInventory);
 
-export function esEstadoErrorApi(
-  error: unknown,
-  estado: number,
-): boolean {
-  return (
-    axios.isAxiosError(error) &&
-    error.response?.status === estado
-  );
+export function esEstadoErrorApi(error: unknown, estado: number): boolean {
+  return axios.isAxiosError(error) && error.response?.status === estado;
 }
 
 export function obtenerMensajeErrorApi(
   error: unknown,
-  respaldo =
-    "No fue posible completar la operación.",
+  respaldo = "No fue posible completar la operación.",
 ): string {
   if (!axios.isAxiosError(error)) {
-    return error instanceof Error
-      ? error.message
-      : respaldo;
+    return error instanceof Error ? error.message : respaldo;
   }
 
   if (!error.response) {
     return "No fue posible conectar con el servidor. Verifica que los servicios estén en ejecución.";
   }
 
-  const datos =
-    error.response.data as
-      | RespuestaErrorApi
-      | undefined;
+  const datos = error.response.data as RespuestaErrorApi | undefined;
 
   if (Array.isArray(datos?.message)) {
     const mensajes = datos.message.filter(
-      (item): item is string =>
-        typeof item === "string",
+      (item): item is string => typeof item === "string",
     );
 
     if (mensajes.length > 0) {
@@ -265,21 +207,15 @@ export function obtenerMensajeErrorApi(
     }
   }
 
-  if (
-    typeof datos?.message === "string"
-  ) {
+  if (typeof datos?.message === "string") {
     return datos.message;
   }
 
-  if (
-    typeof datos?.detail === "string"
-  ) {
+  if (typeof datos?.detail === "string") {
     return datos.detail;
   }
 
-  if (
-    typeof datos?.title === "string"
-  ) {
+  if (typeof datos?.title === "string") {
     return datos.title;
   }
 
@@ -287,15 +223,7 @@ export function obtenerMensajeErrorApi(
 }
 export function crearErrorApi(
   error: unknown,
-  respaldo =
-    "No fue posible completar la operación.",
+  respaldo = "No fue posible completar la operación.",
 ): Error {
-  return new Error(
-    obtenerMensajeErrorApi(
-      error,
-      respaldo,
-    ),
-    { cause: error },
-  );
+  return new Error(obtenerMensajeErrorApi(error, respaldo), { cause: error });
 }
-

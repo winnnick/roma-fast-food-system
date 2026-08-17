@@ -33,6 +33,7 @@ import {
   TreatCancelledSaleInventoryCommand,
   UpdateIngredientCommand,
 } from '../../application/inventory/inventory.commands';
+import { SyncProductReferenceCommand } from '../../application/inventory/product-reference.commands';
 import {
   EvaluateSaleInventoryQuery,
   GetCurrentRecipeByProductQuery,
@@ -64,6 +65,7 @@ import {
   RegisterInventoryCountDto,
   RegisterSaleConsumptionDto,
   SaveRecipeDto,
+  SyncProductReferenceDto,
   UpsertIngredientDto,
 } from './dto/inventory.dto';
 
@@ -200,6 +202,23 @@ export class InventoryController {
         adjustmentQuantity: dto.cantidadAjuste,
         reason: dto.motivo,
         ...actor(request),
+      }),
+    );
+  }
+
+  @Put('productos/:id/referencia')
+  @RequirePermissions('INVENTARIO_RECETAS_GESTIONAR')
+  async syncProductReference(
+    @Param('id', ParseIntPipe) productId: number,
+    @Body() dto: SyncProductReferenceDto,
+  ): Promise<void> {
+    await this.commandBus.execute(
+      new SyncProductReferenceCommand({
+        productId,
+        code: dto.codigo,
+        name: dto.nombre,
+        inventoryControl: dto.controlInventario,
+        status: dto.estado,
       }),
     );
   }

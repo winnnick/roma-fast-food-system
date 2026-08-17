@@ -127,3 +127,11 @@ export class RegisterInventoryCountDto {
   @Type(() => InventoryCountDetailDto)
   detalles!: InventoryCountDetailDto[];
 }
+
+export class SyncProductReferenceDto {
+  @IsString() @MinLength(2) @MaxLength(20) codigo!: string;
+  @IsString() @MinLength(2) @MaxLength(120) nombre!: string;
+  @IsIn(['Con receta', 'No controla inventario'])
+  controlInventario!: 'Con receta' | 'No controla inventario';
+  @IsIn(['Activo', 'Inactivo']) estado!: 'Activo' | 'Inactivo';
+}
