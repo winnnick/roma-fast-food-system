@@ -1,7 +1,9 @@
 import { Inject } from '@nestjs/common';
 import { CommandHandler, ICommandHandler, IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 
+import { ServiceUnavailableException } from '@nestjs/common';
 import type {
+  ReportingDataView,
   ReportingDomain,
   ReportingSnapshot,
   ReportingStatusView,
@@ -11,8 +13,11 @@ import type {
   ReportingSourcePort,
 } from '../../domain/ports/reporting.ports';
 import { REPORTING_REPOSITORY, REPORTING_SOURCE } from '../../domain/ports/reporting.ports';
-import { RebuildReportingSnapshotsCommand } from './reporting.commands';
-import { GetReportingStatusQuery } from './reporting.queries';
+import {
+  RebuildReportingSnapshotsCommand,
+  RefreshReportingDomainCommand,
+} from './reporting.commands';
+import { GetReportingDataQuery, GetReportingStatusQuery } from './reporting.queries';
 
 const DOMAINS: ReportingDomain[] = ['auth', 'operations', 'inventory'];
 
@@ -60,6 +65,30 @@ export class RebuildReportingSnapshotsHandler implements ICommandHandler<
   }
 }
 
+@CommandHandler(RefreshReportingDomainCommand)
+export class RefreshReportingDomainHandler implements ICommandHandler<
+  RefreshReportingDomainCommand,
+  ReportingStatusView
+> {
+  constructor(
+    @Inject(REPORTING_REPOSITORY) private readonly repository: ReportingRepositoryPort,
+    @Inject(REPORTING_SOURCE) private readonly source: ReportingSourcePort,
+  ) {}
+
+  async execute(command: RefreshReportingDomainCommand): Promise<ReportingStatusView> {
+    const payload = await this.source.fetch(command.domain);
+    await this.repository.replaceSnapshots([
+      {
+        domain: command.domain,
+        payload,
+        capturedAt: new Date(),
+      },
+    ]);
+
+    return toStatus(await this.repository.listSnapshots());
+  }
+}
+
 @QueryHandler(GetReportingStatusQuery)
 export class GetReportingStatusHandler implements IQueryHandler<
   GetReportingStatusQuery,
@@ -69,5 +98,39 @@ export class GetReportingStatusHandler implements IQueryHandler<
 
   async execute(): Promise<ReportingStatusView> {
     return toStatus(await this.repository.listSnapshots());
+  }
+}
+
+@QueryHandler(GetReportingDataQuery)
+export class GetReportingDataHandler implements IQueryHandler<
+  GetReportingDataQuery,
+  ReportingDataView
+> {
+  constructor(@Inject(REPORTING_REPOSITORY) private readonly repository: ReportingRepositoryPort) {}
+
+  async execute(): Promise<ReportingDataView> {
+    const snapshots = await this.repository.listSnapshots();
+    const byDomain = new Map(snapshots.map((snapshot) => [snapshot.domain, snapshot]));
+    const auth = byDomain.get('auth');
+    const operations = byDomain.get('operations');
+    const inventory = byDomain.get('inventory');
+
+    if (!auth || !operations || !inventory) {
+      throw new ServiceUnavailableException(
+        'Los modelos de lectura aún no están completos. Reconstruye Reporting e inténtalo nuevamente.',
+      );
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      capturedAt: {
+        auth: auth.capturedAt.toISOString(),
+        operations: operations.capturedAt.toISOString(),
+        inventory: inventory.capturedAt.toISOString(),
+      },
+      auth: auth.payload,
+      operations: operations.payload,
+      inventory: inventory.payload,
+    };
   }
 }

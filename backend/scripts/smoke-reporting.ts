@@ -76,14 +76,71 @@ async function main(): Promise<void> {
   );
   verifyDomains((await status.json()) as StatusResponse);
 
+  const data = await expectStatus(
+    await fetch(`${reportingBaseUrl}/reportes/datos`, { headers: bearer(admin.accessToken) }),
+    200,
+    'Administrador consulta datos consolidados de Reporting',
+  );
+  const reportingData = (await data.json()) as {
+    auth?: { users?: unknown[] };
+    operations?: { sales?: unknown[] };
+    inventory?: { ingredients?: unknown[] };
+  };
+  if (
+    !Array.isArray(reportingData.auth?.users) ||
+    !Array.isArray(reportingData.operations?.sales) ||
+    !Array.isArray(reportingData.inventory?.ingredients)
+  ) {
+    throw new Error('Reporting no devolvió los modelos de lectura consolidados esperados.');
+  }
+  console.log('✓ Reporting expone datos consolidados para el frontend');
+
+  const audit = await expectStatus(
+    await fetch(`${reportingBaseUrl}/reportes/auditoria`, {
+      method: 'POST',
+      headers: {
+        ...bearer(admin.accessToken),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        modulo: 'Reportes',
+        accion: 'Smoke test auditoría',
+        entidad: 'Reporting',
+        entidadId: 'smoke',
+        descripcion: 'Registro generado durante la prueba integral de Reporting.',
+        nivel: 'Información',
+        origen: 'Sistema',
+      }),
+    }),
+    201,
+    'Administrador registra evento de auditoría',
+  );
+  await audit.json();
+
+  const auditList = await expectStatus(
+    await fetch(`${reportingBaseUrl}/reportes/auditoria`, { headers: bearer(admin.accessToken) }),
+    200,
+    'Administrador consulta bitácora persistente',
+  );
+  const auditRows = (await auditList.json()) as unknown[];
+  if (!Array.isArray(auditRows) || auditRows.length === 0) {
+    throw new Error('La bitácora persistente no devolvió registros.');
+  }
+  console.log('✓ Reporting persiste y consulta la bitácora de auditoría');
+
   const cashier = await login('cajero01', process.env.SEED_CAJERO_PASSWORD ?? 'Caja2026*');
   await expectStatus(
     await fetch(`${reportingBaseUrl}/reportes/estado`, { headers: bearer(cashier.accessToken) }),
     403,
     'Cajero bloqueado en Reporting',
   );
+  await expectStatus(
+    await fetch(`${reportingBaseUrl}/reportes/auditoria`, { headers: bearer(cashier.accessToken) }),
+    403,
+    'Cajero bloqueado al consultar bitácora',
+  );
 
-  console.log('Smoke test Reporting snapshots completado correctamente.');
+  console.log('Smoke test Reporting y auditoría completado correctamente.');
 }
 
 void main().catch((error: unknown) => {

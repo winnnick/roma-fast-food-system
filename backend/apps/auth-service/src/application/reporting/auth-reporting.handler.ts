@@ -4,10 +4,11 @@ import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
 import type { RoleRepositoryPort, UserRepositoryPort } from '../../domain/ports/auth.ports';
 import { ROLE_REPOSITORY, USER_REPOSITORY } from '../../domain/ports/auth.ports';
 import { GetAuthReportingSnapshotQuery } from './auth-reporting.query';
+import { toManagedUserView, type ManagedUserView } from '../users/user-management.mapper';
 
 export interface AuthReportingSnapshotView {
   generatedAt: string;
-  users: Awaited<ReturnType<UserRepositoryPort['listManaged']>>;
+  users: ManagedUserView[];
   roles: Awaited<ReturnType<RoleRepositoryPort['list']>>;
 }
 
@@ -23,6 +24,10 @@ export class GetAuthReportingSnapshotHandler implements IQueryHandler<
 
   async execute(): Promise<AuthReportingSnapshotView> {
     const [users, roles] = await Promise.all([this.users.listManaged(), this.roles.list()]);
-    return { generatedAt: new Date().toISOString(), users, roles };
+    return {
+      generatedAt: new Date().toISOString(),
+      users: users.map(toManagedUserView),
+      roles,
+    };
   }
 }

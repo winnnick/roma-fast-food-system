@@ -12,6 +12,7 @@ x-service-common: &service-common
     DATABASE_SSL: "false"
     RABBITMQ_ENABLED: "true"
     RABBITMQ_URL: amqp://roma:${RABBITMQ_PASSWORD:-RomaRabbit2026_Local}@rabbitmq:5672
+    REPORTING_RABBITMQ_QUEUE: roma.reporting
     CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-RomaInternal2026_Local_ChangeMe}
   networks:
@@ -69,7 +70,7 @@ services:
       <<: *service-environment
       SERVICE_NAME: auth-service
       HTTP_PORT: "3101"
-      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_auth
+      AUTH_DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_auth
       RABBITMQ_QUEUE: roma.auth
       JWT_PRIVATE_KEY_PATH: /run/secrets/roma-jwt/jwt-private.pem
       JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
@@ -107,7 +108,7 @@ services:
       <<: *service-environment
       SERVICE_NAME: operations-service
       HTTP_PORT: "3102"
-      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_operations
+      OPERATIONS_DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_operations
       RABBITMQ_QUEUE: roma.operations
       JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
       JWT_ISSUER: roma-fast-food-auth
@@ -142,7 +143,7 @@ services:
       <<: *service-environment
       SERVICE_NAME: inventory-service
       HTTP_PORT: "3103"
-      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_inventory
+      INVENTORY_DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_inventory
       RABBITMQ_QUEUE: roma.inventory
     ports:
       - "3103:3103"
@@ -170,8 +171,11 @@ services:
       <<: *service-environment
       SERVICE_NAME: reporting-service
       HTTP_PORT: "3104"
-      DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_reporting
+      REPORTING_DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_reporting
       RABBITMQ_QUEUE: roma.reporting
+      AUTH_INTERNAL_REPORTING_URL: http://auth-service:3101/api/v1/internal/reporting/snapshot
+      OPERATIONS_INTERNAL_REPORTING_URL: http://operations-service:3102/api/v1/internal/reporting/snapshot
+      INVENTORY_INTERNAL_REPORTING_URL: http://inventory-service:3103/api/v1/internal/reporting/snapshot
     ports:
       - "3104:3104"
     healthcheck:

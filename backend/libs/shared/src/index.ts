@@ -12,3 +12,4 @@ export * from './security/internal-service.guard';
 export * from './security/permissions.guard';
 export * from './security/require-permissions.decorator';
 export * from './security/rsa-jwt-verifier.service';
+export * from './reporting/reporting-events.module';

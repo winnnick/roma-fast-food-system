@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 
-import { DatabaseModule, HealthModule } from '@roma/shared';
+import { DatabaseModule, HealthModule, ReportingEventsModule } from '@roma/shared';
 import { AuthModule } from './auth.module';
 
 @Module({
@@ -16,6 +16,7 @@ import { AuthModule } from './auth.module';
     DatabaseModule.forRoot({ databaseUrlEnv: 'AUTH_DATABASE_URL' }),
     AuthModule,
     HealthModule,
+    ReportingEventsModule.forDomain('auth'),
   ],
 })
 export class AppModule {}

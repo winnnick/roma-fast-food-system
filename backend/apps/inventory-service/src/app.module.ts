@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
 
-import { DatabaseModule, HealthModule } from '@roma/shared';
+import { DatabaseModule, HealthModule, ReportingEventsModule } from '@roma/shared';
 import { InventoryModule } from './inventory.module';
 
 @Module({
@@ -16,6 +16,7 @@ import { InventoryModule } from './inventory.module';
     DatabaseModule.forRoot({ databaseUrlEnv: 'INVENTORY_DATABASE_URL' }),
     InventoryModule,
     HealthModule,
+    ReportingEventsModule.forDomain('inventory'),
   ],
 })
 export class AppModule {}

@@ -99,6 +99,13 @@ interface AccionEstadoProducto {
   nuevoEstado: EstadoCatalogo;
 }
 
+type DatosGestionProductos = [
+  ProductoMenu[],
+  CategoriaProducto[],
+  InsumoInventario[],
+  EstadoInventarioProducto[],
+];
+
 function obtenerMensajeError(
   error: unknown,
 ): string {
@@ -142,6 +149,10 @@ function GestionProductos({
   puedeGestionarCategorias,
 }: GestionProductosProps) {
   const { usuario } = useAuth();
+
+  const puedeConsultarInventario =
+    usuario?.roles?.includes("Administrador") === true ||
+    usuario?.permisos.includes("INVENTARIO_VER") === true;
 
   const [productos, setProductos] =
     useState<ProductoMenu[]>([]);
@@ -232,14 +243,33 @@ function GestionProductos({
     }, []);
 
   const obtenerDatos =
-    useCallback(async () => {
-      return Promise.all([
+    useCallback(async (): Promise<DatosGestionProductos> => {
+      const [productosDatos, categoriasDatos] = await Promise.all([
         listarProductos(),
         listarCategorias(),
+      ]);
+
+      if (!puedeConsultarInventario) {
+        return [
+          productosDatos,
+          categoriasDatos,
+          [],
+          [],
+        ];
+      }
+
+      const [insumosDatos, estadosDatos] = await Promise.all([
         listarInsumosInventario(),
         listarEstadosInventarioProductos(),
       ]);
-    }, []);
+
+      return [
+        productosDatos,
+        categoriasDatos,
+        insumosDatos,
+        estadosDatos,
+      ];
+    }, [puedeConsultarInventario]);
 
   const aplicarDatos =
     useCallback(
@@ -377,6 +407,7 @@ function GestionProductos({
         producto.estado === filtroEstado;
 
       const coincideInventario =
+        !puedeConsultarInventario ||
         filtroInventario === "Todos" ||
         inventario === filtroInventario;
 
@@ -395,6 +426,7 @@ function GestionProductos({
     mapaCategorias,
     mapaInventario,
     productos,
+    puedeConsultarInventario,
   ]);
 
   const totalPaginas = Math.max(
@@ -441,7 +473,7 @@ function GestionProductos({
     Boolean(busqueda) ||
     filtroCategoria !== "Todas" ||
     filtroEstado !== "Todos" ||
-    filtroInventario !== "Todos";
+    (puedeConsultarInventario && filtroInventario !== "Todos");
 
   function limpiarFiltros() {
     setBusqueda("");
@@ -846,8 +878,12 @@ function GestionProductos({
 
         <TarjetaMetrica
           titulo="Productos sin receta"
-          valor={String(productosSinReceta)}
-          descripcion="Requieren configurar inventario."
+          valor={puedeConsultarInventario ? String(productosSinReceta) : "—"}
+          descripcion={
+            puedeConsultarInventario
+              ? "Requieren configurar inventario."
+              : "Detalle disponible para roles de inventario."
+          }
           icono={ChefHat}
           tono="ambar"
           variante="compacta"
@@ -968,30 +1004,32 @@ function GestionProductos({
             </option>
           </select>
 
-          <select
-            value={filtroInventario}
-            onChange={(evento) => {
-              setFiltroInventario(
-                evento.target.value as
-                  FiltroInventario,
-              );
-              setPaginaActual(1);
-            }}
-            className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
-          >
-            <option value="Todos">
-              Todo inventario
-            </option>
-            <option value="Receta configurada">
-              Receta configurada
-            </option>
-            <option value="Sin receta">
-              Sin receta
-            </option>
-            <option value="No controla inventario">
-              No controla inventario
-            </option>
-          </select>
+          {puedeConsultarInventario && (
+            <select
+              value={filtroInventario}
+              onChange={(evento) => {
+                setFiltroInventario(
+                  evento.target.value as
+                    FiltroInventario,
+                );
+                setPaginaActual(1);
+              }}
+              className="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600 focus:ring-4 focus:ring-red-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:ring-red-950/50"
+            >
+              <option value="Todos">
+                Todo inventario
+              </option>
+              <option value="Receta configurada">
+                Receta configurada
+              </option>
+              <option value="Sin receta">
+                Sin receta
+              </option>
+              <option value="No controla inventario">
+                No controla inventario
+              </option>
+            </select>
+          )}
 
           <button
             type="button"
@@ -1188,22 +1226,33 @@ function GestionProductos({
                   </div>
 
                   <div>
-                    <span
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black ${claseInventario(
-                        estadoInventario,
-                      )}`}
-                    >
-                      {estadoInventario ===
-                      "Receta configurada" ? (
-                        <ChefHat size={14} />
-                      ) : estadoInventario ===
-                        "Sin receta" ? (
-                        <PackagePlus size={14} />
-                      ) : (
-                        <PackageOpen size={14} />
-                      )}
-                      {estadoInventario}
-                    </span>
+                    {puedeConsultarInventario ? (
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black ${claseInventario(
+                          estadoInventario,
+                        )}`}
+                      >
+                        {estadoInventario ===
+                        "Receta configurada" ? (
+                          <ChefHat size={14} />
+                        ) : estadoInventario ===
+                          "Sin receta" ? (
+                          <PackagePlus size={14} />
+                        ) : (
+                          <PackageOpen size={14} />
+                        )}
+                        {estadoInventario}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                        {producto.controlInventario === "No controla inventario" ? (
+                          <PackageOpen size={14} />
+                        ) : (
+                          <ChefHat size={14} />
+                        )}
+                        {producto.controlInventario}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-2">

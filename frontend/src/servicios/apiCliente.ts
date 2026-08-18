@@ -28,6 +28,12 @@ const URL_INVENTORY =
     "",
   ) ?? "http://localhost:3103/api/v1";
 
+const URL_REPORTING =
+  (import.meta.env.VITE_REPORTING_API_URL as string | undefined)?.replace(
+    /\/$/,
+    "",
+  ) ?? "http://localhost:3104/api/v1";
+
 interface RespuestaErrorApi {
   message?: unknown;
   detail?: unknown;
@@ -105,12 +111,67 @@ export const apiInventory = axios.create({
   timeout: 12_000,
 });
 
+export const apiReporting = axios.create({
+  baseURL: URL_REPORTING,
+  withCredentials: true,
+  timeout: 15_000,
+});
+
 let renovacionEnCurso: Promise<SesionUsuario> | null = null;
 
-function agregarBearer(
+interface JwtPayloadMinimo {
+  exp?: unknown;
+}
+
+function obtenerExpiracionJwt(token: string): number | null {
+  try {
+    const partes = token.split(".");
+
+    if (partes.length !== 3) {
+      return null;
+    }
+
+    const payloadBase64 = partes[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(partes[1].length / 4) * 4, "=");
+
+    const payload = JSON.parse(
+      window.atob(payloadBase64),
+    ) as JwtPayloadMinimo;
+
+    return typeof payload.exp === "number"
+      ? payload.exp * 1000
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function tokenExpiraPronto(
+  token: string,
+  margenMilisegundos = 30_000,
+): boolean {
+  const expiracion = obtenerExpiracionJwt(token);
+
+  return expiracion !== null
+    ? expiracion - Date.now() <= margenMilisegundos
+    : false;
+}
+
+async function agregarBearer(
   config: InternalAxiosRequestConfig,
-): InternalAxiosRequestConfig {
-  const token = obtenerAccessTokenApi();
+): Promise<InternalAxiosRequestConfig> {
+  let token = obtenerAccessTokenApi();
+
+  if (
+    token &&
+    !esRutaSinRenovacion(config) &&
+    tokenExpiraPronto(token)
+  ) {
+    const sesion = await renovarSesion();
+    token = sesion.accessToken;
+  }
 
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);
@@ -178,9 +239,36 @@ function configurarInterceptors(cliente: AxiosInstance): void {
 configurarInterceptors(apiAuth);
 configurarInterceptors(apiOperations);
 configurarInterceptors(apiInventory);
+configurarInterceptors(apiReporting);
+
+function obtenerErrorAxios(error: unknown): AxiosError | null {
+  if (axios.isAxiosError(error)) {
+    return error;
+  }
+
+  if (error instanceof Error && error.cause && error.cause !== error) {
+    return obtenerErrorAxios(error.cause);
+  }
+
+  return null;
+}
 
 export function esEstadoErrorApi(error: unknown, estado: number): boolean {
-  return axios.isAxiosError(error) && error.response?.status === estado;
+  return obtenerErrorAxios(error)?.response?.status === estado;
+}
+
+export function obtenerPermisosSesionApi(): string[] {
+  const sesion = leerSesionPersistida();
+
+  return Array.isArray(sesion?.usuario?.permisos)
+    ? sesion.usuario.permisos
+    : [];
+}
+
+export function sesionTienePermisoApi(...permisos: string[]): boolean {
+  const permisosSesion = obtenerPermisosSesionApi();
+
+  return permisos.some((permiso) => permisosSesion.includes(permiso));
 }
 
 export function obtenerMensajeErrorApi(

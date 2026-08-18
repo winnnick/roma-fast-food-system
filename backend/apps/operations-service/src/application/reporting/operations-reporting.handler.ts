@@ -14,16 +14,34 @@ import {
 import type { OperationsTransactionRepositoryPort } from '../../domain/ports/operations.ports';
 import { OPERATIONS_TRANSACTION_REPOSITORY } from '../../domain/ports/operations.ports';
 import { GetOperationsReportingSnapshotQuery } from './operations-reporting.query';
+import {
+  toCategoryView,
+  toClientView,
+  toProductView,
+  type CategoryView,
+  type ClientView,
+  type ProductView,
+} from '../catalog/catalog.views';
+import {
+  toCashMovementView,
+  toCashSessionView,
+  toPaymentView,
+  toSaleView,
+  type CashMovementView,
+  type CashSessionView,
+  type SalePaymentView,
+  type SaleView,
+} from '../transactions/operations.views';
 
 export interface OperationsReportingSnapshotView {
   generatedAt: string;
-  categories: Awaited<ReturnType<CategoryRepositoryPort['list']>>;
-  products: Awaited<ReturnType<ProductRepositoryPort['list']>>;
-  clients: Awaited<ReturnType<ClientRepositoryPort['list']>>;
-  sales: Awaited<ReturnType<OperationsTransactionRepositoryPort['listSales']>>;
-  payments: Awaited<ReturnType<OperationsTransactionRepositoryPort['listPayments']>>;
-  cashSessions: Awaited<ReturnType<OperationsTransactionRepositoryPort['listCashSessions']>>;
-  cashMovements: Awaited<ReturnType<OperationsTransactionRepositoryPort['listCashMovements']>>;
+  categories: CategoryView[];
+  products: ProductView[];
+  clients: ClientView[];
+  sales: SaleView[];
+  payments: SalePaymentView[];
+  cashSessions: CashSessionView[];
+  cashMovements: CashMovementView[];
 }
 
 @QueryHandler(GetOperationsReportingSnapshotQuery)
@@ -53,13 +71,13 @@ export class GetOperationsReportingSnapshotHandler implements IQueryHandler<
 
     return {
       generatedAt: new Date().toISOString(),
-      categories,
-      products,
-      clients,
-      sales,
-      payments,
-      cashSessions,
-      cashMovements,
+      categories: categories.map(toCategoryView),
+      products: products.map(toProductView),
+      clients: clients.map(toClientView),
+      sales: sales.map(toSaleView),
+      payments: payments.map(toPaymentView),
+      cashSessions: cashSessions.map(toCashSessionView),
+      cashMovements: cashMovements.map(toCashMovementView),
     };
   }
 }

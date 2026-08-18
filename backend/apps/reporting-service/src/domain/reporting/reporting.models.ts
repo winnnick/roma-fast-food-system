@@ -22,3 +22,11 @@ export interface ReportingStatusView {
   generatedAt: string;
   snapshots: ReportingSnapshotStatus[];
 }
+
+export interface ReportingDataView {
+  generatedAt: string;
+  capturedAt: Record<ReportingDomain, string>;
+  auth: Record<string, unknown>;
+  operations: Record<string, unknown>;
+  inventory: Record<string, unknown>;
+}

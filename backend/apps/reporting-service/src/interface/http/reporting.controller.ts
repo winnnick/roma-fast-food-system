@@ -4,8 +4,14 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ApiJwtAuthGuard, ApiPermissionsGuard, RequirePermissions } from '@roma/shared';
 import { RebuildReportingSnapshotsCommand } from '../../application/reporting/reporting.commands';
-import { GetReportingStatusQuery } from '../../application/reporting/reporting.queries';
-import type { ReportingStatusView } from '../../domain/reporting/reporting.models';
+import {
+  GetReportingDataQuery,
+  GetReportingStatusQuery,
+} from '../../application/reporting/reporting.queries';
+import type {
+  ReportingDataView,
+  ReportingStatusView,
+} from '../../domain/reporting/reporting.models';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -17,6 +23,12 @@ export class ReportingController {
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
   ) {}
+
+  @Get('datos')
+  @ApiOperation({ summary: 'Obtiene los modelos de lectura consolidados para reportes.' })
+  data(): Promise<ReportingDataView> {
+    return this.queryBus.execute(new GetReportingDataQuery());
+  }
 
   @Get('estado')
   @ApiOperation({ summary: 'Consulta el estado de los modelos de lectura de Reporting.' })
