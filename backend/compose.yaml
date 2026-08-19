@@ -145,6 +145,11 @@ services:
       HTTP_PORT: "3103"
       INVENTORY_DATABASE_URL: postgresql://roma:${POSTGRES_PASSWORD:-RomaDb2026_Local}@postgres:5432/roma_inventory
       RABBITMQ_QUEUE: roma.inventory
+      JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
+      JWT_ISSUER: roma-fast-food-auth
+      JWT_AUDIENCE: roma-fast-food-api
+    volumes:
+      - ./.secrets/docker:/run/secrets/roma-jwt:ro
     ports:
       - "3103:3103"
     healthcheck:
@@ -176,6 +181,11 @@ services:
       AUTH_INTERNAL_REPORTING_URL: http://auth-service:3101/api/v1/internal/reporting/snapshot
       OPERATIONS_INTERNAL_REPORTING_URL: http://operations-service:3102/api/v1/internal/reporting/snapshot
       INVENTORY_INTERNAL_REPORTING_URL: http://inventory-service:3103/api/v1/internal/reporting/snapshot
+      JWT_PUBLIC_KEY_PATH: /run/secrets/roma-jwt/jwt-public.pem
+      JWT_ISSUER: roma-fast-food-auth
+      JWT_AUDIENCE: roma-fast-food-api
+    volumes:
+      - ./.secrets/docker:/run/secrets/roma-jwt:ro
     ports:
       - "3104:3104"
     healthcheck:

@@ -14,5 +14,5 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', {
 writeFileSync(resolve(outputDir, 'jwt-private.pem'), privateKey, { mode: 0o600 });
 writeFileSync(resolve(outputDir, 'jwt-public.pem'), publicKey, { mode: 0o644 });
 
-console.log(`Claves JWT generadas en: ${outputDir}`);
+console.log('Claves JWT generadas en: ' + outputDir);
 console.log('La clave privada no debe subirse a Git.');
